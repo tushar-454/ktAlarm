@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import KtAlarm, { type Weekday } from 'kt-alarm';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TimePicker } from '@/components/time-picker';
@@ -76,17 +76,29 @@ export default function AlarmEditorScreen() {
   return (
     <View className="flex-1 bg-white dark:bg-[#0E1116]">
       {/* Top bar */}
-      <View className="flex-row items-center justify-between px-4 pb-2 pt-4">
-        <Pressable onPress={() => router.back()} hitSlop={12} className="px-2 py-1 active:opacity-60">
-          <Text className="text-base text-neutral-500 dark:text-neutral-400">Cancel</Text>
+      <View
+        className="flex-row items-center justify-between px-4 pb-3"
+        // Android shows this modal full-screen (edge-to-edge), so push the bar below the
+        // status bar; on iOS it's a sheet that already starts below it.
+        style={{ paddingTop: (Platform.OS === 'android' ? insets.top : 0) + 12 }}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={8}
+          accessibilityRole="button"
+          className="min-w-[88px] items-center rounded-full bg-neutral-100 px-5 py-2.5 active:opacity-60 dark:bg-[#1A1F27]">
+          <Text className="text-base font-medium text-neutral-700 dark:text-neutral-300">Cancel</Text>
         </Pressable>
         <Text className="text-base font-semibold text-neutral-900 dark:text-white">
           {existing ? 'Edit alarm' : 'New alarm'}
         </Text>
-        <Pressable onPress={save} disabled={saving} hitSlop={12} className="px-2 py-1 active:opacity-60">
-          <Text className="text-base font-semibold" style={{ color: ACCENT, opacity: saving ? 0.5 : 1 }}>
-            Save
-          </Text>
+        <Pressable
+          onPress={save}
+          disabled={saving}
+          hitSlop={8}
+          accessibilityRole="button"
+          className="min-w-[88px] items-center rounded-full px-5 py-2.5 active:opacity-60"
+          style={{ backgroundColor: ACCENT, opacity: saving ? 0.5 : 1 }}>
+          <Text className="text-base font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
         </Pressable>
       </View>
 
