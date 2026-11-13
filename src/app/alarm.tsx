@@ -57,6 +57,10 @@ export default function AlarmEditorScreen() {
 
   const save = async () => {
     if (!KtAlarm) return;
+    if (mission?.type === 'barcode' && !mission.barcodeValue) {
+      Alert.alert('Register a code first', 'Tap "Register code" and scan the barcode you want to use.');
+      return;
+    }
     if (mission && !KtAlarm.getPermissionStatus().overlay) {
       Alert.alert(
         'One more permission',
@@ -284,6 +288,7 @@ export default function AlarmEditorScreen() {
 }
 
 function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m: Mission) => void }) {
+  if (mission.type === 'barcode') return <BarcodeSettings mission={mission} onChange={onChange} />;
   const info = missionInfo(mission.type);
   const setCount = (count: number) =>
     onChange({ ...mission, count: Math.min(info.max, Math.max(info.min, count)) });
@@ -319,16 +324,83 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
         </View>
       </View>
 
-      <Pressable
-        onPress={() => KtAlarm?.previewMission(mission)}
-        accessibilityRole="button"
-        className="mt-4 items-center rounded-full border-2 py-2.5 active:opacity-60"
-        style={{ borderColor: ACCENT }}>
-        <Text className="text-sm font-semibold" style={{ color: ACCENT }}>
-          Preview mission
-        </Text>
-      </Pressable>
+      <PreviewButton mission={mission} />
     </View>
+  );
+}
+
+function BarcodeSettings({ mission, onChange }: { mission: Mission; onChange: (m: Mission) => void }) {
+  const [scanning, setScanning] = useState(false);
+  const registered = !!mission.barcodeValue;
+
+  const scan = async () => {
+    if (!KtAlarm) return;
+    setScanning(true);
+    try {
+      const code = await KtAlarm.scanBarcode();
+      if (code) {
+        onChange({ ...mission, barcodeValue: code.value, barcodeName: mission.barcodeName || 'My code' });
+      }
+    } catch (e) {
+      if (errorCode(e) === 'ERR_CAMERA_PERMISSION') {
+        Alert.alert('Camera is off', 'Allow camera access for ktAlerm in Settings to register a code.');
+      } else {
+        Alert.alert('Could not scan', e instanceof Error ? e.message : String(e));
+      }
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <View className="mt-3 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
+      <Text className="text-sm text-neutral-600 dark:text-neutral-400">
+        Scan a code somewhere away from your bed — toothpaste, shampoo, a coffee bag. To turn the alarm
+        off you&apos;ll have to get up and scan the same code.
+      </Text>
+
+      {registered && (
+        <>
+          <Text className="mb-2 mt-4 text-sm font-medium text-neutral-700 dark:text-neutral-300">Name</Text>
+          <TextInput
+            value={mission.barcodeName ?? ''}
+            onChangeText={(t) => onChange({ ...mission, barcodeName: t })}
+            placeholder="Toothpaste"
+            placeholderTextColor="#9CA3AF"
+            maxLength={40}
+            className="rounded-xl bg-white px-4 py-3 text-base text-neutral-900 dark:bg-[#0E1116] dark:text-white"
+          />
+          <Text className="mt-2 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
+            ✓ Code registered · …{mission.barcodeValue!.slice(-8)}
+          </Text>
+        </>
+      )}
+
+      <Pressable
+        onPress={scan}
+        disabled={scanning}
+        accessibilityRole="button"
+        className="mt-4 items-center rounded-full py-2.5 active:opacity-60"
+        style={{ backgroundColor: ACCENT, opacity: scanning ? 0.5 : 1 }}>
+        <Text className="text-sm font-semibold text-white">{registered ? 'Scan a different code' : 'Register code'}</Text>
+      </Pressable>
+
+      {registered && <PreviewButton mission={mission} />}
+    </View>
+  );
+}
+
+function PreviewButton({ mission }: { mission: Mission }) {
+  return (
+    <Pressable
+      onPress={() => KtAlarm?.previewMission(mission)}
+      accessibilityRole="button"
+      className="mt-4 items-center rounded-full border-2 py-2.5 active:opacity-60"
+      style={{ borderColor: ACCENT }}>
+      <Text className="text-sm font-semibold" style={{ color: ACCENT }}>
+        Preview mission
+      </Text>
+    </Pressable>
   );
 }
 

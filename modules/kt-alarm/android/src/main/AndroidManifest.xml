@@ -22,6 +22,11 @@
   <!-- Re-arm alarms after reboot / app update / clock change -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+  <!-- Barcode mission + code registration. The camera is optional: without it the barcode
+       mission falls back to math. -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
   <!-- Ask to be excluded from Doze / battery optimisation -->
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -77,5 +82,27 @@
       android:taskAffinity="expo.modules.ktalarm.ringing"
       android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
       android:turnScreenOn="true" />
+
+    <!-- Registers the code for a barcode mission (normal screen, not over the lock screen) -->
+    <activity
+      android:name="expo.modules.ktalarm.ScanActivity"
+      android:exported="false"
+      android:screenOrientation="portrait"
+      android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+    <!-- Opt-in uninstall protection (device admin with no policies) -->
+    <receiver
+      android:name="expo.modules.ktalarm.UninstallProtectionReceiver"
+      android:description="@string/kt_alarm_uninstall_protection_description"
+      android:exported="true"
+      android:label="@string/kt_alarm_uninstall_protection_label"
+      android:permission="android.permission.BIND_DEVICE_ADMIN">
+      <meta-data
+        android:name="android.app.device_admin"
+        android:resource="@xml/kt_alarm_device_admin" />
+      <intent-filter>
+        <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

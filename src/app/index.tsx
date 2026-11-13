@@ -4,6 +4,7 @@ import { Alert, FlatList, Pressable, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PermissionCard } from '@/components/permission-card';
+import { UninstallProtectionCard } from '@/components/uninstall-protection-card';
 import { useAlarmPermissions, useAlarms, useNow } from '@/hooks/use-alarms';
 import { formatCountdown, formatDays, formatTime } from '@/lib/alarm-format';
 import { describeMission, missionInfo } from '@/lib/missions';
@@ -45,6 +46,7 @@ export default function AlarmsScreen() {
           </>
         }
         ListEmptyComponent={<EmptyState />}
+        ListFooterComponent={alarms.length > 0 ? <UninstallProtectionCard /> : undefined}
         renderItem={({ item }) => <AlarmRow alarm={item} now={now} />}
       />
 

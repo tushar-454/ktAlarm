@@ -34,6 +34,16 @@ export const MISSIONS: MissionInfo[] = [
     unit: (n) => (n === 1 ? 'shake' : 'shakes'),
   },
   {
+    type: 'squat',
+    title: 'Squat',
+    emoji: '🏋️',
+    min: 5,
+    max: 50,
+    step: 5,
+    defaultCount: 10,
+    unit: (n) => (n === 1 ? 'squat' : 'squats'),
+  },
+  {
     type: 'typing',
     title: 'Typing',
     emoji: '⌨️',
@@ -42,6 +52,16 @@ export const MISSIONS: MissionInfo[] = [
     step: 1,
     defaultCount: 2,
     unit: (n) => (n === 1 ? 'phrase' : 'phrases'),
+  },
+  {
+    type: 'barcode',
+    title: 'Barcode',
+    emoji: '📷',
+    min: 1,
+    max: 1,
+    step: 1,
+    defaultCount: 1,
+    unit: () => 'code',
   },
 ];
 
@@ -60,9 +80,10 @@ export function defaultMission(type: MissionType): Mission {
   return { type, difficulty: 1, count: missionInfo(type).defaultCount };
 }
 
-/** "Math · 3 problems (Medium)" */
+/** "Math · 3 problems (Medium)", "Barcode · Toothpaste" */
 export function describeMission(m: Mission): string {
   const info = missionInfo(m.type);
+  if (m.type === 'barcode') return `${info.title} · ${m.barcodeName?.trim() || 'registered code'}`;
   const base = `${info.title} · ${m.count} ${info.unit(m.count)}`;
   return m.type === 'math' ? `${base} (${MATH_DIFFICULTIES[m.difficulty]?.label ?? 'Medium'})` : base;
 }

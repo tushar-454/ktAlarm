@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="kt_alarm_uninstall_protection_label">ktAlerm uninstall protection</string>
+  <string name="kt_alarm_uninstall_protection_description">Stops ktAlerm from being uninstalled to skip a wake-up mission.</string>
+</resources>

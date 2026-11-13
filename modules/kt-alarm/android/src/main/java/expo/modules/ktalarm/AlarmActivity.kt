@@ -33,7 +33,7 @@ import org.json.JSONObject
  * Two modes:
  *  - ringing: time, label, Snooze, and Dismiss (or "Start mission" for mission alarms)
  *  - mission: the mission itself; the sound is ducked while the user works on it and comes
- *    back at full volume (and the mission resets) after [IDLE_MS] without any effort
+ *    back at full volume (and the mission resets) after [MissionRunner.idleTimeoutMs] without effort
  *
  * Also runs missions in preview mode from the alarm editor: no sound, can be closed.
  */
@@ -42,7 +42,6 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   companion object {
     private const val TAG = "KtAlarm"
     private const val EXTRA_PREVIEW_MISSION = "expo.modules.ktalarm.PREVIEW_MISSION"
-    private const val IDLE_MS = 30_000L
     private const val RELAUNCH_DELAY_MS = 300L
     private val VOLUME_KEYS = setOf(
       KeyEvent.KEYCODE_VOLUME_UP,
@@ -96,11 +95,11 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     }
   }
 
-  /** No effort for [IDLE_MS]: back to the loud ringing screen, mission starts over. */
+  /** No effort for the mission's idle timeout: back to the loud ringing screen, mission starts over. */
   private val idle = Runnable {
     val preview = previewMission
     if (preview != null) {
-      Toast.makeText(this, "Idle for 30 s — mission restarted", Toast.LENGTH_SHORT).show()
+      Toast.makeText(this, "No activity — mission restarted", Toast.LENGTH_SHORT).show()
       startMission(preview)
     } else {
       AlarmService.setDucked(this, false)
@@ -244,7 +243,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     missionNoteView.text = if (isPreview) {
       "Preview — no alarm is ringing"
     } else {
-      "Stop for 30 seconds and the alarm gets loud again"
+      "Stop for ${r.idleTimeoutMs / 1000} seconds and the alarm gets loud again"
     }
     closeButton.visibility = if (isPreview) View.VISIBLE else View.GONE
     missionBody.addView(r.view, FrameLayout.LayoutParams(-1, -1))
@@ -264,7 +263,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
 
   private fun touch() {
     handler.removeCallbacks(idle)
-    if (runner != null) handler.postDelayed(idle, IDLE_MS)
+    runner?.let { handler.postDelayed(idle, it.idleTimeoutMs) }
   }
 
   override fun onMissionActivity() = touch()

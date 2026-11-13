@@ -3,7 +3,7 @@ import { NativeModule, requireOptionalNativeModule } from 'expo';
 /** 0 = Sunday … 6 = Saturday */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type MissionType = 'math' | 'shake' | 'typing';
+export type MissionType = 'math' | 'shake' | 'squat' | 'typing' | 'barcode';
 
 /** Math difficulty: 0 = easy … 3 = very hard. */
 export type MathDifficulty = 0 | 1 | 2 | 3;
@@ -13,9 +13,15 @@ export type Mission = {
   type: MissionType;
   /** Only used by `math`. */
   difficulty: MathDifficulty;
-  /** Problems / shakes / phrases. */
+  /** Problems / shakes / squats / phrases. Always 1 for `barcode`. */
   count: number;
+  /** `barcode` only: raw value of the registered code. Required for that type. */
+  barcodeValue?: string | null;
+  /** `barcode` only: what the user called it, e.g. "Toothpaste". */
+  barcodeName?: string | null;
 };
+
+export type ScannedCode = { value: string; format: string };
 
 /** `maxSnoozes` value meaning "no limit". */
 export const UNLIMITED_SNOOZES = -1;
@@ -92,6 +98,18 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   dismiss(id: string): boolean;
   /** Opens the native mission screen without ringing, to try a mission. Android only. */
   previewMission(mission: Mission): void;
+  /**
+   * Opens the native camera scanner to register a barcode mission's code. Resolves null when
+   * cancelled; rejects with `ERR_CAMERA_PERMISSION` if the camera is denied. Android only.
+   */
+  scanBarcode(): Promise<ScannedCode | null>;
+
+  /** Device-admin uninstall protection. Android only. */
+  isUninstallProtectionEnabled(): boolean;
+  /** Opens the system "activate device admin" screen. */
+  enableUninstallProtection(): void;
+  /** Rejects with `ERR_ALARM_LOCKED` while a mission alarm is ringing or snoozed. */
+  disableUninstallProtection(): Promise<void>;
   getRingingAlarmId(): string | null;
 
   getPermissionStatus(): PermissionStatus;
@@ -113,7 +131,8 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
  * Error codes thrown by the native module:
  * - `ERR_ALARM_LOCKED`: mission alarm is ringing/snoozed; finish the mission first
  * - `ERR_OVERLAY_REQUIRED`: mission alarms need "Display over other apps"
- * - `ERR_INVALID_MISSION`: unknown mission type
+ * - `ERR_INVALID_MISSION`: unknown mission type, or barcode mission without a code
+ * - `ERR_CAMERA_PERMISSION`: camera denied while registering a code
  */
 export function errorCode(e: unknown): string | undefined {
   return typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : undefined;

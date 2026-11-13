@@ -1,8 +1,11 @@
 package expo.modules.ktalarm
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import expo.modules.interfaces.permissions.Permissions
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
@@ -17,8 +20,10 @@ data class MissionInput(
   @Field val type: String = "",
   @Field val difficulty: Int = 1,
   @Field val count: Int? = null,
+  @Field val barcodeValue: String? = null,
+  @Field val barcodeName: String? = null,
 ) : Record {
-  fun toMission(): Mission? = Mission.create(type, difficulty, count)
+  fun toMission(): Mission? = Mission.create(type, difficulty, count, barcodeValue, barcodeName)
 }
 
 data class AlarmInput(
@@ -45,9 +50,22 @@ class OverlayPermissionRequiredException :
     null,
   )
 
-class InvalidMissionException : CodedException("ERR_INVALID_MISSION", "Unknown mission type.", null)
+class InvalidMissionException :
+  CodedException("ERR_INVALID_MISSION", "Unknown mission type, or a barcode mission without a registered code.", null)
+
+class CameraPermissionException :
+  CodedException("ERR_CAMERA_PERMISSION", "Camera permission is needed to register a code.", null)
+
+class NoActivityException : CodedException("ERR_NO_ACTIVITY", "The app is not in the foreground.", null)
 
 class KtAlarmModule : Module() {
+
+  companion object {
+    private const val REQUEST_SCAN = 0x4B7A
+  }
+
+  /** The JS promise waiting for [ScanActivity]'s result. */
+  private var pendingScan: Promise? = null
 
   private val context: Context
     get() = appContext.reactContext?.applicationContext ?: throw Exceptions.ReactContextLost()
@@ -67,6 +85,24 @@ class KtAlarmModule : Module() {
     Name("KtAlarm")
 
     Events("onAlarmsChanged", "onRingingChanged")
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode != REQUEST_SCAN) return@OnActivityResult
+      val promise = pendingScan ?: return@OnActivityResult
+      pendingScan = null
+      val data = payload.data
+      when {
+        payload.resultCode == Activity.RESULT_OK && data != null -> promise.resolve(
+          mapOf(
+            "value" to data.getStringExtra(ScanActivity.EXTRA_VALUE),
+            "format" to data.getStringExtra(ScanActivity.EXTRA_FORMAT),
+          ),
+        )
+        data?.getStringExtra(ScanActivity.EXTRA_ERROR) == ScanActivity.ERROR_PERMISSION ->
+          promise.reject(CameraPermissionException())
+        else -> promise.resolve(null) // cancelled
+      }
+    }
 
     OnCreate { AlarmEvents.add(bridgeListener) }
     OnDestroy { AlarmEvents.remove(bridgeListener) }
@@ -124,6 +160,31 @@ class KtAlarmModule : Module() {
     Function("previewMission") { input: MissionInput ->
       val mission = input.toMission() ?: throw InvalidMissionException()
       launcherContext.startActivity(AlarmActivity.previewIntent(launcherContext, mission))
+    }
+
+    /** Opens the native scanner to register a barcode mission's code. Resolves null if cancelled. */
+    AsyncFunction("scanBarcode") { promise: Promise ->
+      val activity = appContext.currentActivity ?: throw NoActivityException()
+      pendingScan?.resolve(null)
+      pendingScan = promise
+      Handler(Looper.getMainLooper()).post {
+        @Suppress("DEPRECATION")
+        activity.startActivityForResult(ScanActivity.intent(activity), REQUEST_SCAN)
+      }
+    }
+
+    // endregion
+
+    // region Uninstall protection
+
+    Function("isUninstallProtectionEnabled") { UninstallProtection.isEnabled(context) }
+
+    Function("enableUninstallProtection") { UninstallProtection.requestEnable(launcherContext) }
+
+    AsyncFunction("disableUninstallProtection") {
+      // Switching protection off is the first step to uninstalling, so not while a mission is due.
+      if (AlarmStore.all(context).any { it.isLocked() }) throw AlarmLockedException()
+      UninstallProtection.disable(context)
     }
 
     Function("getRingingAlarmId") { AlarmService.activeAlarmId }
