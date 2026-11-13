@@ -8,6 +8,9 @@
       ],
       "@/assets/*": [
         "./assets/*"
+      ],
+      "kt-alarm": [
+        "./modules/kt-alarm"
       ]
     }
   },

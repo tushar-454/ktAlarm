@@ -1,0 +1,155 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="expo.modules.ktalarm" >
+4
+5    <uses-sdk android:minSdkVersion="24" />
+5-->INJECTED
+5-->INJECTED
+6
+7    <!--
+8       Exact alarms. USE_EXACT_ALARM is granted automatically on Android 13+ for alarm-clock apps
+9       (cannot be revoked). SCHEDULE_EXACT_ALARM covers Android 12 / 12L.
+10    -->
+11    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+11-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:5:3-72
+11-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:5:20-69
+12    <uses-permission
+12-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:6:3-104
+13        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+13-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:6:20-74
+14        android:maxSdkVersion="32" />
+14-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:6:75-101
+15
+16    <!-- Ringing notification + full-screen alarm UI over the lock screen -->
+17    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+17-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:9:3-75
+17-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:9:20-72
+18    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+18-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:10:3-79
+18-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:10:20-76
+19    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+19-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:11:3-76
+19-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:11:20-73
+20
+21    <!-- Keep the CPU awake while ringing, vibrate -->
+22    <uses-permission android:name="android.permission.WAKE_LOCK" />
+22-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:14:3-66
+22-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:14:20-63
+23    <uses-permission android:name="android.permission.VIBRATE" />
+23-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:15:3-64
+23-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:15:20-61
+24
+25    <!-- Background ringing service -->
+26    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+26-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:18:3-75
+26-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:18:20-72
+27    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+27-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:19:3-90
+27-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:19:20-87
+28    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+28-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:20:3-91
+28-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:20:20-88
+29
+30    <!-- Re-arm alarms after reboot / app update / clock change -->
+31    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+31-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:23:3-79
+31-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:23:20-76
+32
+33    <!-- Ask to be excluded from Doze / battery optimisation -->
+34    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+34-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:26:3-93
+34-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:26:20-90
+35
+36    <application>
+36-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:28:3-76:17
+37
+38        <!-- Fired by AlarmManager at the exact alarm time -->
+39        <receiver
+39-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:31:5-34:34
+40            android:name="expo.modules.ktalarm.AlarmReceiver"
+40-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:32:7-56
+41            android:directBootAware="true"
+41-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:33:7-37
+42            android:exported="false" />
+42-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:34:7-31
+43
+44        <!-- Snooze / Dismiss buttons on the notification -->
+45        <receiver
+45-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:37:5-40:34
+46            android:name="expo.modules.ktalarm.AlarmActionReceiver"
+46-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:38:7-62
+47            android:directBootAware="true"
+47-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:39:7-37
+48            android:exported="false" />
+48-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:40:7-31
+49
+50        <!-- Re-schedule everything after reboot, update, time / timezone change -->
+51        <receiver
+51-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:43:5-55:16
+52            android:name="expo.modules.ktalarm.BootReceiver"
+52-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:44:7-55
+53            android:directBootAware="true"
+53-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:45:7-37
+54            android:exported="true" >
+54-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:46:7-30
+55            <intent-filter>
+55-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:47:7-54:23
+56                <action android:name="android.intent.action.BOOT_COMPLETED" />
+56-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:48:9-71
+56-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:48:17-68
+57                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+57-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:49:9-78
+57-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:49:17-75
+58                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+58-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:50:9-76
+58-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:50:17-73
+59                <action android:name="android.intent.action.TIME_SET" />
+59-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:51:9-65
+59-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:51:17-62
+60                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+60-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:52:9-73
+60-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:52:17-70
+61                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+61-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:53:9-99
+61-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:53:17-96
+62            </intent-filter>
+63        </receiver>
+64
+65        <!-- Plays the alarm sound in the background, holds the wake lock -->
+66        <service
+66-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:58:5-62:70
+67            android:name="expo.modules.ktalarm.AlarmService"
+67-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:59:7-55
+68            android:directBootAware="true"
+68-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:60:7-37
+69            android:exported="false"
+69-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:61:7-31
+70            android:foregroundServiceType="mediaPlayback|systemExempted" />
+70-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:62:7-67
+71
+72        <!-- Native full-screen ringing UI, shown over the lock screen and turns the screen on -->
+73        <activity
+73-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:65:5-75:37
+74            android:name="expo.modules.ktalarm.AlarmActivity"
+74-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:66:7-56
+75            android:directBootAware="true"
+75-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:67:7-37
+76            android:excludeFromRecents="true"
+76-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:68:7-40
+77            android:exported="false"
+77-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:69:7-31
+78            android:launchMode="singleInstance"
+78-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:70:7-42
+79            android:screenOrientation="portrait"
+79-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:71:7-43
+80            android:showWhenLocked="true"
+80-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:72:7-36
+81            android:taskAffinity="expo.modules.ktalarm.ringing"
+81-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:73:7-58
+82            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+82-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:74:7-69
+83            android:turnScreenOn="true" />
+83-->/home/tushar/Documents/code/ktAlerm/modules/kt-alarm/android/src/main/AndroidManifest.xml:75:7-34
+84    </application>
+85
+86</manifest>

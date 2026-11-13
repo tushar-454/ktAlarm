@@ -1,0 +1,7 @@
+{
+  "name": "kt-alarm",
+  "version": "1.0.0",
+  "description": "Native alarm engine for ktAlerm (Android AlarmManager + foreground service, iOS AlarmKit)",
+  "main": "index.ts",
+  "private": true
+}

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="expo.modules.ktalarm" >
+
+    <uses-sdk android:minSdkVersion="24" />
+
+    <!--
+       Exact alarms. USE_EXACT_ALARM is granted automatically on Android 13+ for alarm-clock apps
+       (cannot be revoked). SCHEDULE_EXACT_ALARM covers Android 12 / 12L.
+    -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+
+    <!-- Ringing notification + full-screen alarm UI over the lock screen -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Keep the CPU awake while ringing, vibrate -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Background ringing service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+
+    <!-- Re-arm alarms after reboot / app update / clock change -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Ask to be excluded from Doze / battery optimisation -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <application>
+
+        <!-- Fired by AlarmManager at the exact alarm time -->
+        <receiver
+            android:name="expo.modules.ktalarm.AlarmReceiver"
+            android:directBootAware="true"
+            android:exported="false" />
+
+        <!-- Snooze / Dismiss buttons on the notification -->
+        <receiver
+            android:name="expo.modules.ktalarm.AlarmActionReceiver"
+            android:directBootAware="true"
+            android:exported="false" />
+
+        <!-- Re-schedule everything after reboot, update, time / timezone change -->
+        <receiver
+            android:name="expo.modules.ktalarm.BootReceiver"
+            android:directBootAware="true"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Plays the alarm sound in the background, holds the wake lock -->
+        <service
+            android:name="expo.modules.ktalarm.AlarmService"
+            android:directBootAware="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|systemExempted" />
+
+        <!-- Native full-screen ringing UI, shown over the lock screen and turns the screen on -->
+        <activity
+            android:name="expo.modules.ktalarm.AlarmActivity"
+            android:directBootAware="true"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:screenOrientation="portrait"
+            android:showWhenLocked="true"
+            android:taskAffinity="expo.modules.ktalarm.ringing"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:turnScreenOn="true" />
+    </application>
+
+</manifest>

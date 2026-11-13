@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.imtushar454.ktAlerm"
+      "bundleIdentifier": "com.imtushar454.ktAlerm",
+      "infoPlist": {
+        "NSAlarmKitUsageDescription": "ktAlerm schedules alarms that ring at the time you choose, even when the app is closed."
+      }
     },
     "android": {
       "adaptiveIcon": {
