@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PermissionCard } from '@/components/permission-card';
 import { useAlarmPermissions, useAlarms, useNow } from '@/hooks/use-alarms';
 import { formatCountdown, formatDays, formatTime } from '@/lib/alarm-format';
+import { describeMission, missionInfo } from '@/lib/missions';
 
 const ACCENT = '#FF8A3D';
 
@@ -66,12 +67,21 @@ export default function AlarmsScreen() {
 function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
   const { time, period } = formatTime(alarm.hour, alarm.minute);
   const snoozed = alarm.snoozeUntil && alarm.snoozeUntil > now;
+  const mission = alarm.missions?.[0];
+
+  const showError = (e: unknown) => Alert.alert('Alarm is locked', e instanceof Error ? e.message : String(e));
 
   const confirmDelete = () =>
-    Alert.alert('Delete alarm?', `${time} ${period}${alarm.label ? ` · ${alarm.label}` : ''}`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => KtAlarm?.deleteAlarm(alarm.id) },
-    ]);
+    alarm.locked
+      ? showError(new Error('Complete the wake-up mission to turn off this alarm.'))
+      : Alert.alert('Delete alarm?', `${time} ${period}${alarm.label ? ` · ${alarm.label}` : ''}`, [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => KtAlarm?.deleteAlarm(alarm.id).catch(showError),
+          },
+        ]);
 
   return (
     <Pressable
@@ -93,6 +103,11 @@ function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
         <Text className="text-sm text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
           {[alarm.label, formatDays(alarm.days)].filter(Boolean).join(' · ')}
         </Text>
+        {mission && (
+          <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
+            {alarm.locked ? '🔒' : missionInfo(mission.type).emoji} {describeMission(mission)}
+          </Text>
+        )}
         {snoozed ? (
           <Text className="mt-1 text-xs font-medium text-[#FF8A3D]">
             Snoozed · rings {formatCountdown(alarm.snoozeUntil!, now)}
@@ -105,7 +120,7 @@ function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
       </View>
       <Switch
         value={alarm.enabled}
-        onValueChange={(v) => KtAlarm?.setAlarmEnabled(alarm.id, v)}
+        onValueChange={(v) => KtAlarm?.setAlarmEnabled(alarm.id, v).catch(showError)}
         trackColor={{ true: ACCENT, false: '#9CA3AF55' }}
         thumbColor="#FFFFFF"
         accessibilityLabel={`Alarm ${time} ${period}`}

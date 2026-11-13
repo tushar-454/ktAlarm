@@ -47,3 +47,6 @@ modules/*/android/build/
 modules/*/android/.cxx/
 modules/*/android/.gradle/
 modules/*/ios/build/
+
+# Local native module build output
+modules/*/android/build/

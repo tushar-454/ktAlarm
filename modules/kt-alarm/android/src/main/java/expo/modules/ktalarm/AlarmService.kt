@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
@@ -37,22 +38,48 @@ import java.util.Date
  *  - posts a full-screen-intent notification that turns on the screen and shows
  *    [AlarmActivity] over the lock screen
  *  - auto-silences after [AUTO_SILENCE_MS]
+ *
+ * Mission alarms are stricter: no Dismiss action, no auto-silence (only a [MISSION_CAP_MS]
+ * safety cap), the alarm-stream volume can't be turned down, and they come back after a
+ * reboot or a service kill (see [PendingRing]).
  */
 class AlarmService : Service() {
 
   companion object {
     const val ACTION_RING = "expo.modules.ktalarm.ACTION_RING"
+    /** Re-ring an interrupted mission alarm without advancing it again. */
+    const val ACTION_RESUME = "expo.modules.ktalarm.ACTION_RESUME"
+    /** Lower / restore the sound while the user works on a mission. */
+    const val ACTION_DUCK = "expo.modules.ktalarm.ACTION_DUCK"
+    const val ACTION_UNDUCK = "expo.modules.ktalarm.ACTION_UNDUCK"
     private const val TAG = "KtAlarm"
     private const val CHANNEL_RINGING = "kt_alarm_ringing"
     private const val CHANNEL_MISSED = "kt_alarm_missed"
     private const val NOTIFICATION_ID = 0x4B7A
     private const val AUTO_SILENCE_MS = 10 * 60 * 1000L
     private const val FADE_IN_MS = 20_000L
+    /** A mission alarm gives up after this long, so a broken sensor can't ring forever. */
+    const val MISSION_CAP_MS = 60 * 60 * 1000L
+    private const val DUCK_GAIN = 0.3f
+    /** Mission alarms ring at least this loud (fraction of the alarm stream's max volume). */
+    private const val MISSION_MIN_VOLUME = 0.6f
 
     /** Id of the alarm currently ringing, or null. */
     @Volatile
     var activeAlarmId: String? = null
       private set
+
+    /** Ducks or restores the ringing sound. No-op when nothing is ringing. */
+    fun setDucked(context: Context, ducked: Boolean) {
+      if (activeAlarmId == null) return
+      try {
+        context.startService(
+          Intent(context, AlarmService::class.java).setAction(if (ducked) ACTION_DUCK else ACTION_UNDUCK),
+        )
+      } catch (e: IllegalStateException) {
+        Log.w(TAG, "Cannot change ringing volume", e)
+      }
+    }
   }
 
   private val handler = Handler(Looper.getMainLooper())
@@ -60,17 +87,41 @@ class AlarmService : Service() {
   private var vibrator: Vibrator? = null
   private var wakeLock: PowerManager.WakeLock? = null
   private var fadeStartedAt = 0L
+  private var ducked = false
+
+  private val audio: AudioManager by lazy { getSystemService(AudioManager::class.java) }
+  /** User's alarm volume before we raised it, or -1. */
+  private var originalVolume = -1
+  /** Alarm-stream volume we hold while a mission alarm rings, or -1. */
+  private var guardedVolume = -1
 
   private val autoSilence = Runnable {
     val id = activeAlarmId ?: return@Runnable
     Log.i(TAG, "Auto-silencing $id")
     AlarmStore.get(this, id)?.let { postMissedNotification(it) }
-    AlarmController.dismiss(this, id)
+    AlarmController.release(this, id)
+  }
+
+  /** Volume keys pressed while the screen is off still reach the system. Undo them. */
+  private val volumeGuard = object : Runnable {
+    override fun run() {
+      if (guardedVolume < 0) return
+      try {
+        if (audio.getStreamVolume(AudioManager.STREAM_ALARM) < guardedVolume) {
+          audio.setStreamVolume(AudioManager.STREAM_ALARM, guardedVolume, 0)
+        }
+      } catch (e: SecurityException) {
+        Log.w(TAG, "Cannot hold alarm volume", e)
+        return
+      }
+      handler.postDelayed(this, 400)
+    }
   }
 
   private val fadeStep = object : Runnable {
     override fun run() {
       val p = player ?: return
+      if (ducked) return
       val progress = ((System.currentTimeMillis() - fadeStartedAt).toFloat() / FADE_IN_MS).coerceIn(0f, 1f)
       val volume = 0.15f + 0.85f * progress
       try { p.setVolume(volume, volume) } catch (_: IllegalStateException) { return }
@@ -81,37 +132,102 @@ class AlarmService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val action = intent?.action
+
+    if (action == ACTION_DUCK || action == ACTION_UNDUCK) {
+      // Plain startService() on the running service; no startForeground() needed.
+      if (activeAlarmId == null) stopSelf() else applyDuck(action == ACTION_DUCK)
+      return START_NOT_STICKY
+    }
+
+    if (intent == null) {
+      // Killed while ringing and restarted by the system (START_STICKY). Re-ring through an
+      // alarm-clock alarm, which is allowed to start a foreground service from the background.
+      AlarmStore.getPendingRing(this)?.let {
+        AlarmScheduler.scheduleResume(this, it.alarmId, System.currentTimeMillis() + 1_000)
+      }
+      stopSelf()
+      return START_NOT_STICKY
+    }
+
     // Must call startForeground() promptly on every start, before anything can fail.
-    val id = intent?.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID)
-    val alarm = if (intent?.action == ACTION_RING && id != null) AlarmController.onFired(this, id) else null
+    val id = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID)
+    val alarm = when {
+      id == null -> null
+      action == ACTION_RING -> AlarmController.onFired(this, id)
+      action == ACTION_RESUME -> resumable(id)
+      else -> null
+    }
 
     val shown = alarm ?: activeAlarmId?.let { AlarmStore.get(this, it) }
     startInForeground(buildRingingNotification(shown))
 
-    if (alarm == null) {
-      if (activeAlarmId == null) stopSelf()
-      return START_NOT_STICKY
+    when {
+      alarm == null -> if (activeAlarmId == null) stopSelf()
+      action == ACTION_RESUME && activeAlarmId == alarm.id -> Unit // already ringing
+      else -> startRinging(alarm, resumed = action == ACTION_RESUME)
+    }
+    return if (activeAlarmId != null && currentAlarm()?.hasMission == true) START_STICKY else START_NOT_STICKY
+  }
+
+  private fun currentAlarm(): Alarm? = activeAlarmId?.let { AlarmStore.get(this, it) }
+
+  /** The interrupted mission alarm, if it is still within its safety cap. */
+  private fun resumable(id: String): Alarm? {
+    val pending = AlarmStore.getPendingRing(this)?.takeIf { it.alarmId == id } ?: return null
+    val alarm = AlarmStore.get(this, id)
+    if (alarm?.hasMission != true || System.currentTimeMillis() - pending.startedAt >= MISSION_CAP_MS) {
+      AlarmStore.clearPendingRing(this)
+      return null
+    }
+    return alarm
+  }
+
+  private fun startRinging(alarm: Alarm, resumed: Boolean) {
+    val current = currentAlarm()
+    if (current != null && current.id != alarm.id && current.hasMission && !alarm.hasMission) {
+      // A plain alarm must not cut a mission alarm short. Report it as missed instead.
+      postMissedNotification(alarm)
+      startInForeground(buildRingingNotification(current))
+      return
     }
 
     // A second alarm going off while one is ringing replaces it.
     stopFeedback()
     activeAlarmId = alarm.id
+    ducked = false
 
-    acquireWakeLock()
+    val now = System.currentTimeMillis()
+    val silenceAfter = if (alarm.hasMission) {
+      val pending = AlarmStore.getPendingRing(this)?.takeIf { resumed && it.alarmId == alarm.id }
+      val startedAt = pending?.startedAt ?: now
+      // Keep the very first "original" volume if one mission alarm replaces another.
+      val original = pending?.originalVolume?.takeIf { it >= 0 }
+        ?: originalVolume.takeIf { it >= 0 }
+        ?: currentAlarmVolume()
+      AlarmStore.setPendingRing(this, PendingRing(alarm.id, startedAt, original))
+      holdVolume(original)
+      (MISSION_CAP_MS - (now - startedAt)).coerceAtLeast(60_000L)
+    } else {
+      releaseVolume()
+      AUTO_SILENCE_MS
+    }
+
+    acquireWakeLock(silenceAfter + 60_000)
     startSound()
     if (alarm.vibrate) startVibration()
     launchRingingScreen(alarm)
 
     handler.removeCallbacks(autoSilence)
-    handler.postDelayed(autoSilence, AUTO_SILENCE_MS)
+    handler.postDelayed(autoSilence, silenceAfter)
 
     AlarmEvents.emit(AlarmEvents.Type.RINGING_CHANGED)
-    return START_NOT_STICKY
   }
 
   override fun onDestroy() {
     handler.removeCallbacksAndMessages(null)
     stopFeedback()
+    releaseVolume()
     wakeLock?.let { if (it.isHeld) it.release() }
     wakeLock = null
     activeAlarmId = null
@@ -173,10 +289,11 @@ class AlarmService : Service() {
   private fun buildRingingNotification(alarm: Alarm?): Notification {
     ensureChannels()
     val title = alarm?.label?.takeIf { it.isNotBlank() } ?: "Alarm"
+    val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date())
     val b = builder(CHANNEL_RINGING)
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
       .setContentTitle(title)
-      .setContentText(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()))
+      .setContentText(alarm?.mission?.let { "$time · ${it.describe()} to turn off" } ?: time)
       .setCategory(Notification.CATEGORY_ALARM)
       .setVisibility(Notification.VISIBILITY_PUBLIC)
       .setOngoing(true)
@@ -190,10 +307,10 @@ class AlarmService : Service() {
         AlarmActivity.intent(this, alarm.id),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )
-      b.setFullScreenIntent(fullScreen, true)
-        .setContentIntent(fullScreen)
-        .addAction(action(alarm, AlarmActionReceiver.ACTION_SNOOZE, "Snooze", 3))
-        .addAction(action(alarm, AlarmActionReceiver.ACTION_DISMISS, "Dismiss", 4))
+      b.setFullScreenIntent(fullScreen, true).setContentIntent(fullScreen)
+      if (alarm.canSnooze) b.addAction(action(alarm, AlarmActionReceiver.ACTION_SNOOZE, "Snooze", 3))
+      // Mission alarms can only be turned off from the mission screen.
+      if (!alarm.hasMission) b.addAction(action(alarm, AlarmActionReceiver.ACTION_DISMISS, "Dismiss", 4))
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
@@ -259,13 +376,45 @@ class AlarmService : Service() {
 
   // region Sound / vibration / wake lock
 
-  private fun acquireWakeLock() {
-    if (wakeLock?.isHeld == true) return
-    val pm = getSystemService(PowerManager::class.java)
-    wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ktalarm:ringing").apply {
-      setReferenceCounted(false)
-      acquire(AUTO_SILENCE_MS + 60_000)
+  private fun acquireWakeLock(timeoutMs: Long) {
+    val lock = wakeLock ?: getSystemService(PowerManager::class.java)
+      .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ktalarm:ringing")
+      .apply { setReferenceCounted(false) }
+    wakeLock = lock
+    lock.acquire(timeoutMs) // re-acquiring a non-counted lock just extends the timeout
+  }
+
+  private fun currentAlarmVolume(): Int =
+    try { audio.getStreamVolume(AudioManager.STREAM_ALARM) } catch (_: Exception) { -1 }
+
+  /** Raise the alarm stream to at least [MISSION_MIN_VOLUME] and keep it there. */
+  private fun holdVolume(original: Int) {
+    originalVolume = original
+    val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+    val floor = kotlin.math.ceil(max * MISSION_MIN_VOLUME).toInt()
+    guardedVolume = maxOf(original, floor).coerceAtMost(max)
+    handler.removeCallbacks(volumeGuard)
+    handler.post(volumeGuard)
+  }
+
+  private fun releaseVolume() {
+    handler.removeCallbacks(volumeGuard)
+    guardedVolume = -1
+    if (originalVolume >= 0) {
+      try {
+        audio.setStreamVolume(AudioManager.STREAM_ALARM, originalVolume, 0)
+      } catch (e: SecurityException) {
+        Log.w(TAG, "Cannot restore alarm volume", e)
+      }
     }
+    originalVolume = -1
+  }
+
+  private fun applyDuck(duck: Boolean) {
+    ducked = duck
+    handler.removeCallbacks(fadeStep)
+    val gain = if (duck) DUCK_GAIN else 1f
+    try { player?.setVolume(gain, gain) } catch (_: IllegalStateException) {}
   }
 
   private fun alarmUris(): List<Uri> = listOfNotNull(

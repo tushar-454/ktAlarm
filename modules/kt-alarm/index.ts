@@ -3,6 +3,23 @@ import { NativeModule, requireOptionalNativeModule } from 'expo';
 /** 0 = Sunday … 6 = Saturday */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
+export type MissionType = 'math' | 'shake' | 'typing';
+
+/** Math difficulty: 0 = easy … 3 = very hard. */
+export type MathDifficulty = 0 | 1 | 2 | 3;
+
+/** A task that must be completed before the ringing alarm can be turned off. */
+export type Mission = {
+  type: MissionType;
+  /** Only used by `math`. */
+  difficulty: MathDifficulty;
+  /** Problems / shakes / phrases. */
+  count: number;
+};
+
+/** `maxSnoozes` value meaning "no limit". */
+export const UNLIMITED_SNOOZES = -1;
+
 export type Alarm = {
   id: string;
   hour: number;
@@ -17,6 +34,20 @@ export type Alarm = {
   snoozeUntil: number | null;
   /** Epoch ms of the next ring, null when disabled. */
   nextTriggerAt: number | null;
+  /**
+   * Missions required to dismiss (at most one for now). Android only for now — iOS
+   * returns no field, so read it as `alarm.missions ?? []`.
+   */
+  missions?: Mission[];
+  /** Snoozes allowed per ring, or `UNLIMITED_SNOOZES`. */
+  maxSnoozes?: number;
+  /** Snoozes used for the current ring. */
+  snoozeCount?: number;
+  /**
+   * A mission alarm that is ringing or snoozed: it can't be switched off, edited or deleted
+   * until the mission is done.
+   */
+  locked?: boolean;
 };
 
 export type AlarmInput = {
@@ -28,6 +59,8 @@ export type AlarmInput = {
   enabled?: boolean;
   vibrate?: boolean;
   snoozeMinutes?: number;
+  missions?: Mission[];
+  maxSnoozes?: number;
 };
 
 export type PermissionStatus = {
@@ -53,8 +86,12 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   saveAlarm(input: AlarmInput): Promise<Alarm>;
   deleteAlarm(id: string): Promise<void>;
   setAlarmEnabled(id: string, enabled: boolean): Promise<void>;
-  snooze(id: string): void;
-  dismiss(id: string): void;
+  /** Returns false when no snoozes are left. */
+  snooze(id: string): boolean;
+  /** Returns false for a locked mission alarm. */
+  dismiss(id: string): boolean;
+  /** Opens the native mission screen without ringing, to try a mission. Android only. */
+  previewMission(mission: Mission): void;
   getRingingAlarmId(): string | null;
 
   getPermissionStatus(): PermissionStatus;
@@ -72,6 +109,16 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
  * Null on platforms without the native module (web, Expo Go). The app needs a development
  * build: `npx expo run:android` / `npx expo run:ios`.
  */
+/**
+ * Error codes thrown by the native module:
+ * - `ERR_ALARM_LOCKED`: mission alarm is ringing/snoozed; finish the mission first
+ * - `ERR_OVERLAY_REQUIRED`: mission alarms need "Display over other apps"
+ * - `ERR_INVALID_MISSION`: unknown mission type
+ */
+export function errorCode(e: unknown): string | undefined {
+  return typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : undefined;
+}
+
 const KtAlarm = requireOptionalNativeModule<KtAlarmNativeModule>('KtAlarm');
 
 export default KtAlarm;

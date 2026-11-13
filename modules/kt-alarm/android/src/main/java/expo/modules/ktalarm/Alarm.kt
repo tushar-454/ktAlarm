@@ -9,6 +9,9 @@ import java.util.Calendar
  *
  * @param days repeat days, 0 = Sunday … 6 = Saturday. Empty = rings once.
  * @param snoozeUntil epoch millis of a pending snooze, or null.
+ * @param missions tasks required to dismiss the alarm. v1 uses at most one; a list keeps chains open.
+ * @param maxSnoozes snoozes allowed per occurrence, or [UNLIMITED_SNOOZES].
+ * @param snoozeCount snoozes already used for the current occurrence.
  */
 data class Alarm(
   val id: String,
@@ -20,8 +23,24 @@ data class Alarm(
   val vibrate: Boolean,
   val snoozeMinutes: Int,
   val snoozeUntil: Long? = null,
+  val missions: List<Mission> = emptyList(),
+  val maxSnoozes: Int = UNLIMITED_SNOOZES,
+  val snoozeCount: Int = 0,
 ) {
   val isRepeating: Boolean get() = days.isNotEmpty()
+  val hasMission: Boolean get() = missions.isNotEmpty()
+  val mission: Mission? get() = missions.firstOrNull()
+  val canSnooze: Boolean get() = maxSnoozes == UNLIMITED_SNOOZES || snoozeCount < maxSnoozes
+
+  /** Snoozes left, or null when unlimited. */
+  val snoozesLeft: Int? get() = if (maxSnoozes == UNLIMITED_SNOOZES) null else (maxSnoozes - snoozeCount).coerceAtLeast(0)
+
+  /**
+   * A mission alarm that is ringing or snoozed cannot be switched off, edited or deleted —
+   * otherwise "snooze, then delete" would skip the mission.
+   */
+  fun isLocked(now: Long = System.currentTimeMillis()): Boolean =
+    hasMission && (AlarmService.activeAlarmId == id || (snoozeUntil ?: 0L) > now)
 
   /** Next epoch-millis this alarm should ring, strictly after [now]. */
   fun nextTrigger(now: Long = System.currentTimeMillis()): Long {
@@ -59,6 +78,9 @@ data class Alarm(
     put("vibrate", vibrate)
     put("snoozeMinutes", snoozeMinutes)
     if (snoozeUntil != null) put("snoozeUntil", snoozeUntil)
+    put("missions", JSONArray().apply { missions.forEach { put(it.toJson()) } })
+    put("maxSnoozes", maxSnoozes)
+    put("snoozeCount", snoozeCount)
   }
 
   /** Shape returned to JavaScript. */
@@ -73,11 +95,18 @@ data class Alarm(
     "snoozeMinutes" to snoozeMinutes,
     "snoozeUntil" to snoozeUntil?.toDouble(),
     "nextTriggerAt" to if (enabled) nextTrigger().toDouble() else null,
+    "missions" to missions.map { it.toMap() },
+    "maxSnoozes" to maxSnoozes,
+    "snoozeCount" to snoozeCount,
+    "locked" to isLocked(),
   )
 
   companion object {
+    const val UNLIMITED_SNOOZES = -1
+
     fun fromJson(o: JSONObject): Alarm {
       val daysJson = o.optJSONArray("days") ?: JSONArray()
+      val missionsJson = o.optJSONArray("missions") ?: JSONArray()
       return Alarm(
         id = o.getString("id"),
         hour = o.getInt("hour"),
@@ -88,6 +117,9 @@ data class Alarm(
         vibrate = o.optBoolean("vibrate", true),
         snoozeMinutes = o.optInt("snoozeMinutes", 5),
         snoozeUntil = if (o.has("snoozeUntil")) o.getLong("snoozeUntil") else null,
+        missions = (0 until missionsJson.length()).mapNotNull { Mission.fromJson(missionsJson.getJSONObject(it)) },
+        maxSnoozes = o.optInt("maxSnoozes", UNLIMITED_SNOOZES),
+        snoozeCount = o.optInt("snoozeCount", 0),
       )
     }
   }

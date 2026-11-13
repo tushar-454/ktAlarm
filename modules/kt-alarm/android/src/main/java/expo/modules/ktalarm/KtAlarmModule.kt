@@ -5,12 +5,21 @@ import android.content.Context
 import android.os.Build
 import expo.modules.interfaces.permissions.Permissions
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.records.Field
 import expo.modules.kotlin.records.Record
 import java.util.UUID
+
+data class MissionInput(
+  @Field val type: String = "",
+  @Field val difficulty: Int = 1,
+  @Field val count: Int? = null,
+) : Record {
+  fun toMission(): Mission? = Mission.create(type, difficulty, count)
+}
 
 data class AlarmInput(
   @Field val id: String? = null,
@@ -21,7 +30,22 @@ data class AlarmInput(
   @Field val enabled: Boolean = true,
   @Field val vibrate: Boolean = true,
   @Field val snoozeMinutes: Int = 5,
+  @Field val missions: List<MissionInput> = emptyList(),
+  /** -1 = unlimited. */
+  @Field val maxSnoozes: Int = Alarm.UNLIMITED_SNOOZES,
 ) : Record
+
+class AlarmLockedException :
+  CodedException("ERR_ALARM_LOCKED", "Complete the wake-up mission to turn off this alarm.", null)
+
+class OverlayPermissionRequiredException :
+  CodedException(
+    "ERR_OVERLAY_REQUIRED",
+    "Mission alarms need \"Display over other apps\" so the mission can't be skipped.",
+    null,
+  )
+
+class InvalidMissionException : CodedException("ERR_INVALID_MISSION", "Unknown mission type.", null)
 
 class KtAlarmModule : Module() {
 
@@ -57,6 +81,11 @@ class KtAlarmModule : Module() {
 
     AsyncFunction("saveAlarm") { input: AlarmInput ->
       require(input.hour in 0..23 && input.minute in 0..59) { "Invalid time" }
+      val existing = input.id?.let { AlarmStore.get(context, it) }
+      if (existing?.isLocked() == true) throw AlarmLockedException()
+      // One mission per alarm in v1; the list shape leaves room for chains.
+      val missions = input.missions.take(1).map { it.toMission() ?: throw InvalidMissionException() }
+      if (missions.isNotEmpty() && !AlarmPermissions.hasOverlay(context)) throw OverlayPermissionRequiredException()
       val alarm = Alarm(
         id = input.id ?: UUID.randomUUID().toString(),
         hour = input.hour,
@@ -67,20 +96,35 @@ class KtAlarmModule : Module() {
         vibrate = input.vibrate,
         snoozeMinutes = input.snoozeMinutes.coerceIn(1, 60),
         snoozeUntil = null,
+        missions = missions,
+        maxSnoozes = if (input.maxSnoozes < 0) Alarm.UNLIMITED_SNOOZES else input.maxSnoozes.coerceIn(0, 10),
+        snoozeCount = 0,
       )
       AlarmController.save(context, alarm)
       alarm.toMap()
     }
 
-    AsyncFunction("deleteAlarm") { id: String -> AlarmController.delete(context, id) }
+    AsyncFunction("deleteAlarm") { id: String ->
+      if (AlarmStore.get(context, id)?.isLocked() == true) throw AlarmLockedException()
+      AlarmController.delete(context, id)
+    }
 
     AsyncFunction("setAlarmEnabled") { id: String, enabled: Boolean ->
+      if (!enabled && AlarmStore.get(context, id)?.isLocked() == true) throw AlarmLockedException()
       AlarmController.setEnabled(context, id, enabled)
     }
 
+    /** @return false when no snoozes are left. */
     Function("snooze") { id: String -> AlarmController.snooze(context, id) }
 
+    /** @return false for a locked mission alarm (it can only be turned off by the mission). */
     Function("dismiss") { id: String -> AlarmController.dismiss(context, id) }
+
+    /** Runs a mission on the native alarm screen without ringing, to try it out. */
+    Function("previewMission") { input: MissionInput ->
+      val mission = input.toMission() ?: throw InvalidMissionException()
+      launcherContext.startActivity(AlarmActivity.previewIntent(launcherContext, mission))
+    }
 
     Function("getRingingAlarmId") { AlarmService.activeAlarmId }
 

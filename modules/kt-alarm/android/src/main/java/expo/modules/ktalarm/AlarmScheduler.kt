@@ -40,6 +40,37 @@ object AlarmScheduler {
     am.cancel(firePendingIntent(context, id))
   }
 
+  /**
+   * Brings back a mission alarm that was still ringing when the phone rebooted or the service
+   * was killed. Goes through setAlarmClock() because that grants the receiver the right to start
+   * a foreground service — a plain BOOT_COMPLETED receiver may not on Android 15+.
+   */
+  fun scheduleResume(context: Context, id: String, triggerAt: Long) {
+    val am = context.getSystemService(AlarmManager::class.java)
+    val pi = resumePendingIntent(context, id)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+      am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+    } else {
+      am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, showAppPendingIntent(context, id)), pi)
+    }
+    Log.i(TAG, "Scheduled resume of $id at $triggerAt")
+  }
+
+  fun cancelResume(context: Context) {
+    // PendingIntent equality ignores extras, so the id doesn't matter here.
+    context.getSystemService(AlarmManager::class.java).cancel(resumePendingIntent(context, ""))
+  }
+
+  private fun resumePendingIntent(context: Context, id: String): PendingIntent =
+    PendingIntent.getBroadcast(
+      context,
+      RESUME_REQUEST_CODE,
+      Intent(context, AlarmReceiver::class.java)
+        .setAction(AlarmReceiver.ACTION_RESUME)
+        .putExtra(EXTRA_ALARM_ID, id),
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
   fun rescheduleAll(context: Context) {
     AlarmStore.all(context).forEach { schedule(context, it) }
   }
@@ -72,4 +103,7 @@ object AlarmScheduler {
   fun requestCode(id: String, slot: Int): Int = id.hashCode() * 8 + slot
 
   const val EXTRA_ALARM_ID = "expo.modules.ktalarm.ALARM_ID"
+
+  /** Only one alarm can be pending-ringing at a time, so one fixed request code. */
+  private const val RESUME_REQUEST_CODE = 0x4B7A01
 }

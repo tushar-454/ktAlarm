@@ -61,9 +61,13 @@
       android:exported="false"
       android:foregroundServiceType="mediaPlayback|systemExempted" />
 
-    <!-- Native full-screen ringing UI, shown over the lock screen and turns the screen on -->
+    <!-- Native full-screen ringing UI, shown over the lock screen and turns the screen on.
+         Also hosts the dismiss missions; configChanges keeps mission progress across keyboard,
+         theme and display changes instead of recreating the activity. -->
     <activity
       android:name="expo.modules.ktalarm.AlarmActivity"
+      android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale"
+      android:windowSoftInputMode="adjustResize"
       android:directBootAware="true"
       android:excludeFromRecents="true"
       android:exported="false"

@@ -3,6 +3,15 @@ package expo.modules.ktalarm
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * A mission alarm that was ringing and has not been completed. Survives reboots so the alarm
+ * can ring again as soon as the phone is back on.
+ *
+ * @param originalVolume the user's alarm-stream volume before ringing raised it, restored afterwards.
+ */
+data class PendingRing(val alarmId: String, val startedAt: Long, val originalVolume: Int)
 
 /**
  * Persists alarms natively so receivers can re-arm them without the JS runtime.
@@ -13,6 +22,7 @@ import org.json.JSONArray
 object AlarmStore {
   private const val PREFS = "kt_alarm_store"
   private const val KEY_ALARMS = "alarms"
+  private const val KEY_PENDING_RING = "pending_ring"
 
   private fun prefs(context: Context): SharedPreferences =
     context.applicationContext
@@ -44,6 +54,31 @@ object AlarmStore {
   @Synchronized
   fun remove(context: Context, id: String) {
     write(context, all(context).filterNot { it.id == id })
+  }
+
+  @Synchronized
+  fun getPendingRing(context: Context): PendingRing? {
+    val raw = prefs(context).getString(KEY_PENDING_RING, null) ?: return null
+    return try {
+      val o = JSONObject(raw)
+      PendingRing(o.getString("alarmId"), o.getLong("startedAt"), o.optInt("originalVolume", -1))
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  @Synchronized
+  fun setPendingRing(context: Context, ring: PendingRing) {
+    val o = JSONObject()
+      .put("alarmId", ring.alarmId)
+      .put("startedAt", ring.startedAt)
+      .put("originalVolume", ring.originalVolume)
+    prefs(context).edit().putString(KEY_PENDING_RING, o.toString()).commit()
+  }
+
+  @Synchronized
+  fun clearPendingRing(context: Context) {
+    prefs(context).edit().remove(KEY_PENDING_RING).commit()
   }
 
   private fun write(context: Context, alarms: List<Alarm>) {
