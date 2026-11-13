@@ -2,7 +2,7 @@
   "expo": {
     "name": "ktAlerm",
     "slug": "ktAlerm",
-    "owner": "imtushar454",
+    "owner": "tusharimran.olw",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -51,7 +51,7 @@
         }
       },
       "eas": {
-        "projectId": "88b64e22-7aed-4c85-8aea-6fb22be530d2"
+        "projectId": "9ea747a5-2da3-457d-a036-915e78be149a"
       }
     }
   }
