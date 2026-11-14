@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import KtAlarm, { errorCode, type Mission, type MissionType, type Weekday } from 'kt-alarm';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TimePicker } from '@/components/time-picker';
@@ -24,6 +24,24 @@ const MISSIONS_SUPPORTED = Platform.OS === 'android';
 function defaultTime() {
   const d = new Date(Date.now() + 60 * 60 * 1000);
   return { hour: d.getHours(), minute: 0 };
+}
+
+const usesCamera = (type: MissionType) => type === 'squat' || type === 'barcode';
+
+/** Asks for the camera if needed; explains how to turn it on if it's blocked. */
+async function ensureCamera(): Promise<boolean> {
+  if (!KtAlarm || KtAlarm.getPermissionStatus().camera !== false) return true;
+  const { granted } = await KtAlarm.requestCameraPermission();
+  if (granted) return true;
+  Alert.alert(
+    'Camera needed',
+    'This mission uses the camera. Allow camera access for ktAlerm in Settings, or pick another mission.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Open settings', onPress: () => Linking.openSettings() },
+    ],
+  );
+  return false;
 }
 
 export default function AlarmEditorScreen() {
@@ -53,6 +71,8 @@ export default function AlarmEditorScreen() {
   const pickMission = (type: MissionType | null) => {
     setMission(type ? (mission?.type === type ? mission : defaultMission(type)) : null);
     if (!maxSnoozesTouched) setMaxSnoozes(type ? MISSION_DEFAULT_MAX_SNOOZES : -1);
+    // Barcode asks when registering a code; squat asks right away.
+    if (type === 'squat') void ensureCamera();
   };
 
   const save = async () => {
@@ -61,6 +81,7 @@ export default function AlarmEditorScreen() {
       Alert.alert('Register a code first', 'Tap "Register code" and scan the barcode you want to use.');
       return;
     }
+    if (mission && usesCamera(mission.type) && !(await ensureCamera())) return;
     if (mission && !KtAlarm.getPermissionStatus().overlay) {
       Alert.alert(
         'One more permission',
@@ -295,6 +316,12 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
 
   return (
     <View className="mt-3 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
+      {mission.type === 'squat' && (
+        <Text className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+          The front camera counts your squats. Stand your phone up against something, step back about 2 m (6
+          ft) so you&apos;re in the frame from head to toe, and squat until your thighs are close to parallel.
+        </Text>
+      )}
       {mission.type === 'math' && (
         <>
           <Text className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">Difficulty</Text>
@@ -393,7 +420,10 @@ function BarcodeSettings({ mission, onChange }: { mission: Mission; onChange: (m
 function PreviewButton({ mission }: { mission: Mission }) {
   return (
     <Pressable
-      onPress={() => KtAlarm?.previewMission(mission)}
+      onPress={async () => {
+        if (usesCamera(mission.type) && !(await ensureCamera())) return;
+        KtAlarm?.previewMission(mission);
+      }}
       accessibilityRole="button"
       className="mt-4 items-center rounded-full border-2 py-2.5 active:opacity-60"
       style={{ borderColor: ACCENT }}>

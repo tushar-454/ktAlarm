@@ -22,8 +22,8 @@
   <!-- Re-arm alarms after reboot / app update / clock change -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-  <!-- Barcode mission + code registration. The camera is optional: without it the barcode
-       mission falls back to math. -->
+  <!-- Barcode + squat missions and code registration. The camera is optional: without it (or
+       if it fails at alarm time) those missions fall back to math. -->
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 

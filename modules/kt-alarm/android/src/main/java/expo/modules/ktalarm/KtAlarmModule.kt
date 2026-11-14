@@ -54,7 +54,7 @@ class InvalidMissionException :
   CodedException("ERR_INVALID_MISSION", "Unknown mission type, or a barcode mission without a registered code.", null)
 
 class CameraPermissionException :
-  CodedException("ERR_CAMERA_PERMISSION", "Camera permission is needed to register a code.", null)
+  CodedException("ERR_CAMERA_PERMISSION", "Camera permission is needed for this mission.", null)
 
 class NoActivityException : CodedException("ERR_NO_ACTIVITY", "The app is not in the foreground.", null)
 
@@ -205,6 +205,11 @@ class KtAlarmModule : Module() {
       } else {
         promise.resolve(mapOf("granted" to AlarmPermissions.hasNotifications(context)))
       }
+    }
+
+    /** Squat and barcode missions use the camera. Resolves `{ granted }` (plus Expo's status fields). */
+    AsyncFunction("requestCameraPermission") { promise: Promise ->
+      Permissions.askForPermissionsWithPermissionsManager(appContext.permissions, promise, Manifest.permission.CAMERA)
     }
 
     Function("openExactAlarmSettings") { AlarmPermissions.openExactAlarmSettings(launcherContext) }

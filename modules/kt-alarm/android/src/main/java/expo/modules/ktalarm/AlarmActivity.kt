@@ -72,6 +72,8 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   private var previewMission: Mission? = null
   private val isPreview: Boolean get() = previewMission != null
   private var runner: MissionRunner? = null
+  /** The camera failed during this ring: go straight to the fallback mission next time. */
+  private var cameraFailed = false
 
   private lateinit var ringingView: View
   private lateinit var labelView: TextView
@@ -137,10 +139,12 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   override fun onStart() {
     super.onStart()
     handler.removeCallbacks(relaunch)
+    runner?.onHostShown()
   }
 
   override fun onStop() {
     super.onStop()
+    runner?.onHostHidden()
     val screenOn = getSystemService(PowerManager::class.java).isInteractive
     if (!isFinishing && !isPreview && screenOn && alarm?.hasMission == true && AlarmService.activeAlarmId == alarmId) {
       handler.postDelayed(relaunch, RELAUNCH_DELAY_MS)
@@ -209,6 +213,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       return
     }
     val keepMission = id == alarmId && runner != null && !isPreview
+    if (id != alarmId) cameraFailed = false
     previewMission = null
     alarmId = id
     alarm = AlarmStore.get(this, id)
@@ -268,6 +273,16 @@ class AlarmActivity : Activity(), MissionRunner.Host {
 
   override fun onMissionActivity() = touch()
 
+  /** A camera mission lost its camera: never leave the user with a mission they can't finish. */
+  override fun onMissionUnavailable() {
+    handler.post {
+      if (runner == null) return@post
+      cameraFailed = true
+      Toast.makeText(this, "Camera unavailable — solve these instead", Toast.LENGTH_LONG).show()
+      startMission(MissionRunner.FALLBACK)
+    }
+  }
+
   override fun onMissionComplete() {
     handler.removeCallbacks(idle)
     if (isPreview) {
@@ -285,7 +300,8 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   private fun onPrimary() {
     val mission = alarm?.mission
     if (mission != null) {
-      startMission(mission)
+      val usesCamera = mission.type == MissionType.SQUAT || mission.type == MissionType.BARCODE
+      startMission(if (cameraFailed && usesCamera) MissionRunner.FALLBACK else mission)
       return
     }
     val id = alarmId ?: return

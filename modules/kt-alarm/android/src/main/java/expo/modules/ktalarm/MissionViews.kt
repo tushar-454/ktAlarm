@@ -1,14 +1,18 @@
 package expo.modules.ktalarm
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -36,6 +40,11 @@ internal abstract class MissionRunner(protected val context: Context, protected 
     /** The user is actively working on the mission. */
     fun onMissionActivity()
     fun onMissionComplete()
+    /**
+     * The mission stopped working on this device (camera broken, busy or gone). The host
+     * replaces it with [FALLBACK] so the user is never stuck with a mission they can't finish.
+     */
+    fun onMissionUnavailable()
   }
 
   abstract val title: String
@@ -44,10 +53,17 @@ internal abstract class MissionRunner(protected val context: Context, protected 
   open val idleTimeoutMs: Long = 30_000L
   open fun start() {}
   open fun stop() {}
+  /** The screen went to the background (screen off, Home): release the camera. */
+  open fun onHostHidden() {}
+  /** The screen is visible again after [onHostHidden]. */
+  open fun onHostShown() {}
 
   protected fun dp(v: Int) = Ui.dp(context, v)
 
   companion object {
+    /** Runs instead of a mission that can't work here. */
+    val FALLBACK = Mission(MissionType.MATH, difficulty = 1, count = 3)
+
     fun create(context: Context, mission: Mission, host: Host): MissionRunner = when (mission.type) {
       MissionType.MATH -> MathMission(context, mission, host)
       MissionType.TYPING -> TypingMission(context, mission, host)
@@ -55,17 +71,16 @@ internal abstract class MissionRunner(protected val context: Context, protected 
       MissionType.SHAKE ->
         if (ShakeMission.isSupported(context)) ShakeMission(context, mission, host) else fallback(context, host)
       MissionType.SQUAT ->
-        if (SquatMission.isSupported(context)) SquatMission(context, mission, host) else fallback(context, host)
+        if (CameraView.isAvailable(context)) SquatMission(context, mission, host) else fallback(context, host)
       MissionType.BARCODE ->
-        if (BarcodeMission.isSupported(context) && mission.barcodeValue != null) {
+        if (CameraView.isAvailable(context) && mission.barcodeValue != null) {
           BarcodeMission(context, mission, host)
         } else {
           fallback(context, host)
         }
     }
 
-    private fun fallback(context: Context, host: Host): MissionRunner =
-      MathMission(context, Mission(MissionType.MATH, difficulty = 1, count = 3), host)
+    private fun fallback(context: Context, host: Host): MissionRunner = MathMission(context, FALLBACK, host)
   }
 }
 
@@ -292,167 +307,171 @@ internal class ShakeMission(context: Context, private val mission: Mission, host
 // region Squat
 
 /**
- * Counts squats from vertical acceleration with the phone held at chest height.
- *
- * One squat is: accelerate down (negative), a long positive phase (braking at the bottom and
- * pushing back up), then decelerate at the top (negative). Requiring the positive phase to last
- * [MIN_BOTTOM_MS] and the whole rep [MIN_REP_MS] filters out simply shaking the phone.
+ * Squats in front of the camera. The phone stands somewhere, the user steps back until their
+ * whole body is in view, and ML Kit pose detection + [SquatCounter] count only real squats: hips
+ * down towards the knees and back up. Moving or shaking the phone does nothing.
  */
-internal class SquatMission(context: Context, private val mission: Mission, host: Host) :
-  MissionRunner(context, host), SensorEventListener {
+internal class SquatMission(context: Context, private val mission: Mission, host: Host) : MissionRunner(context, host) {
 
   companion object {
-    /** Vertical acceleration (m/s²) that counts as moving. ~0.12 g. */
-    private const val THRESHOLD = 1.2f
-    private const val MIN_BOTTOM_MS = 300L
-    private const val MIN_REP_MS = 900L
-    /** A rep that hasn't finished in this long is abandoned. */
-    private const val MAX_REP_MS = 5_000L
-    /** Smoothing of the vertical signal. */
-    private const val SMOOTHING = 0.25f
-    /** Fallback gravity estimate when there is no fused gravity sensor (slow low-pass). */
-    private const val GRAVITY_SMOOTHING = 0.02f
-
-    fun isSupported(context: Context): Boolean = ShakeMission.isSupported(context)
+    private val OVERLAY = Color.argb(160, 0, 0, 0)
   }
 
-  private enum class Phase { IDLE, GOING_DOWN, BOTTOM, COOLDOWN }
-
   override val title = "Squats"
+  /** Standing the phone up and stepping back takes a moment. */
+  override val idleTimeoutMs = 60_000L
 
-  private val sensors = context.getSystemService(SensorManager::class.java)
-  /** Prefer the fused sensors (accelerometer + gyro); fall back to the raw accelerometer. */
-  private val linearSensor = sensors.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
-  private val gravitySensor = sensors.getDefaultSensor(Sensor.TYPE_GRAVITY)
-  private val useFused = linearSensor != null && gravitySensor != null
-
-  private val gravity = floatArrayOf(0f, 0f, SensorManager.GRAVITY_EARTH)
-  private val linear = FloatArray(3)
-  private var vertical = 0f
-
-  private var phase = Phase.IDLE
-  private var repStartedAt = 0L
-  private var bottomStartedAt = 0L
-  private var calmSince = 0L
-
-  private var squats = 0
+  private val handler = Handler(Looper.getMainLooper())
+  private val counter = SquatCounter()
+  private val camera = PoseCameraView(context)
   private var done = false
+  private var deep = false
+  /** Beeps on every rep: the user is a couple of metres from the screen. */
+  private var beeper: ToneGenerator? = null
 
-  private val remainingView = Ui.text(context, 96f, Color.WHITE, bold = true)
-  private val statusView = Ui.text(context, 16f, Ui.MUTED)
-  private val bar = Ui.progressBar(context, mission.count)
+  private val remainingView = Ui.text(context, 56f, Color.WHITE, bold = true)
+  private val statusView = Ui.text(context, 22f, Color.WHITE, bold = true).apply {
+    background = Ui.rounded(context, OVERLAY, radiusDp = 24)
+    setPadding(dp(20), dp(10), dp(20), dp(10))
+  }
+  private val depthBar = Ui.progressBar(context, 100)
 
   override val view: View = LinearLayout(context).apply {
     orientation = LinearLayout.VERTICAL
-    gravity = Gravity.CENTER
-    addView(Ui.text(context, 18f, Ui.MUTED, value = "Hold your phone at your chest\nand squat all the way down"))
-    addView(remainingView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
-    addView(Ui.text(context, 16f, Ui.MUTED, value = "squats left"))
-    addView(bar, LinearLayout.LayoutParams(-1, dp(10)).apply { topMargin = dp(32) })
-    addView(statusView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+    addView(
+      Ui.text(
+        context,
+        15f,
+        Ui.MUTED,
+        value = "Stand your phone up, step back until you're in the frame from head to toe, then squat",
+      ),
+    )
+    addView(
+      FrameLayout(context).apply {
+        background = Ui.rounded(context, Ui.SURFACE, radiusDp = 24)
+        clipToOutline = true
+        addView(camera, FrameLayout.LayoutParams(-1, -1))
+        addView(
+          LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = Ui.rounded(context, OVERLAY, radiusDp = 20)
+            setPadding(dp(18), dp(4), dp(18), dp(10))
+            addView(remainingView)
+            addView(Ui.text(context, 14f, Color.WHITE, value = "left"))
+          },
+          FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(dp(12), dp(12), 0, 0) },
+        )
+        addView(
+          statusView,
+          FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(dp(12), 0, dp(12), dp(16))
+          },
+        )
+      },
+      LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(12) },
+    )
+    addView(
+      LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(Ui.text(context, 13f, Ui.MUTED, value = "Depth"))
+        addView(depthBar, LinearLayout.LayoutParams(0, dp(10), 1f).apply { marginStart = dp(12) })
+      },
+      LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) },
+    )
   }
 
   init {
+    camera.onPose = { onPose(it) }
+    camera.onError = { host.onMissionUnavailable() }
     render()
+    statusView.text = "Starting camera…"
+  }
+
+  private fun onPose(frame: PoseFrame?) {
+    if (done) return
+    val legs = frame?.legs().orEmpty()
+    val before = counter.state
+    val counted = counter.update(legs, frame?.height?.toFloat() ?: 1f, SystemClock.elapsedRealtime())
+    val state = counter.state
+    camera.showPose(frame, highlight = state == SquatCounter.State.DOWN)
+
+    depthBar.progress = (counter.depth * 100).toInt()
+    val nowDeep = counter.depth >= 1f
+    if (nowDeep != deep) {
+      deep = nowDeep
+      depthBar.progressTintList = ColorStateList.valueOf(if (deep) Ui.SUCCESS else Ui.ACCENT)
+    }
+    if (state != before && state == SquatCounter.State.DOWN) host.onMissionActivity()
+
+    if (counted) onRep() else setStatus(statusText(frame, legs))
+  }
+
+  /** Called every frame: only touch the view when the text changes. */
+  private fun setStatus(text: String) {
+    if (statusView.text.toString() != text) statusView.text = text
+  }
+
+  private fun statusText(frame: PoseFrame?, legs: List<SquatCounter.Leg>): String = when (counter.state) {
+    SquatCounter.State.NOT_VISIBLE -> when {
+      frame == null -> "Stand in front of the camera"
+      legs.isEmpty() -> "Step back so your feet are in view"
+      else -> "Stand up on your feet"
+    }
+    SquatCounter.State.STAND_UP -> "Stand up straight"
+    SquatCounter.State.READY -> "Squat down"
+    SquatCounter.State.DOWN -> "Now stand up"
+  }
+
+  private fun onRep() {
+    host.onMissionActivity()
+    render()
+    if (counter.reps < mission.count) {
+      beep(ToneGenerator.TONE_PROP_BEEP)
+      statusView.text = "Nice! Squat down"
+      return
+    }
+    done = true
+    beep(ToneGenerator.TONE_PROP_ACK)
+    statusView.text = "Done!"
+    camera.stop()
+    handler.postDelayed({ host.onMissionComplete() }, 600)
+  }
+
+  private fun beep(tone: Int) {
+    try {
+      beeper?.startTone(tone, 150)
+    } catch (_: RuntimeException) {
+    }
+  }
+
+  private fun render() {
+    remainingView.text = (mission.count - counter.reps).coerceAtLeast(0).toString()
   }
 
   override fun start() {
-    if (useFused) {
-      sensors.registerListener(this, linearSensor, SensorManager.SENSOR_DELAY_GAME)
-      sensors.registerListener(this, gravitySensor, SensorManager.SENSOR_DELAY_GAME)
-    } else {
-      sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
-        sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+    if (beeper == null) {
+      beeper = try {
+        ToneGenerator(AudioManager.STREAM_ALARM, 90)
+      } catch (_: RuntimeException) {
+        null // no tone resources on this device: squats still count, just silently
       }
     }
+    camera.start()
   }
 
   override fun stop() {
-    sensors.unregisterListener(this)
+    handler.removeCallbacksAndMessages(null)
+    camera.stop()
+    beeper?.release()
+    beeper = null
   }
 
-  override fun onSensorChanged(event: SensorEvent) {
-    if (done) return
-    val v = event.values
-    when (event.sensor.type) {
-      Sensor.TYPE_GRAVITY -> {
-        gravity[0] = v[0]; gravity[1] = v[1]; gravity[2] = v[2]
-        return
-      }
-      Sensor.TYPE_LINEAR_ACCELERATION -> {
-        linear[0] = v[0]; linear[1] = v[1]; linear[2] = v[2]
-      }
-      Sensor.TYPE_ACCELEROMETER -> {
-        for (i in 0..2) {
-          gravity[i] += GRAVITY_SMOOTHING * (v[i] - gravity[i])
-          linear[i] = v[i] - gravity[i]
-        }
-      }
-      else -> return
-    }
-    val g = sqrt(gravity[0] * gravity[0] + gravity[1] * gravity[1] + gravity[2] * gravity[2])
-    if (g < 1f) return
-    // Gravity sensors report "up" as positive, so this is upward acceleration.
-    val up = (linear[0] * gravity[0] + linear[1] * gravity[1] + linear[2] * gravity[2]) / g
-    vertical += SMOOTHING * (up - vertical)
-    step(System.currentTimeMillis())
-  }
+  override fun onHostHidden() = camera.stop()
 
-  private fun step(now: Long) {
-    if (phase != Phase.IDLE && phase != Phase.COOLDOWN && now - repStartedAt > MAX_REP_MS) phase = Phase.IDLE
-    when (phase) {
-      Phase.IDLE -> if (vertical < -THRESHOLD) {
-        phase = Phase.GOING_DOWN
-        repStartedAt = now
-        statusView.text = "Down…"
-      }
-      Phase.GOING_DOWN -> if (vertical > THRESHOLD) {
-        phase = Phase.BOTTOM
-        bottomStartedAt = now
-        statusView.text = "…and up"
-      }
-      Phase.BOTTOM -> if (vertical < -THRESHOLD) {
-        val longEnough = now - bottomStartedAt >= MIN_BOTTOM_MS && now - repStartedAt >= MIN_REP_MS
-        if (longEnough) {
-          count()
-          phase = Phase.COOLDOWN
-          calmSince = 0L
-        } else {
-          // Too quick to be a squat (shaking). Treat this as the start of a new rep.
-          phase = Phase.GOING_DOWN
-          repStartedAt = now
-        }
-      }
-      Phase.COOLDOWN -> {
-        // Wait until the phone is steady again before looking for the next rep.
-        if (kotlin.math.abs(vertical) < THRESHOLD / 2) {
-          if (calmSince == 0L) calmSince = now
-          if (now - calmSince >= 150) phase = Phase.IDLE
-        } else {
-          calmSince = 0L
-        }
-      }
-    }
-  }
-
-  private fun count() {
-    squats++
-    host.onMissionActivity()
-    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-    statusView.text = "Nice!"
-    render()
-    if (squats >= mission.count) {
-      done = true
-      stop()
-      host.onMissionComplete()
-    }
-  }
-
-  override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-
-  private fun render() {
-    remainingView.text = (mission.count - squats).coerceAtLeast(0).toString()
-    bar.progress = squats
+  override fun onHostShown() {
+    if (!done) camera.start()
   }
 }
 
@@ -461,11 +480,6 @@ internal class SquatMission(context: Context, private val mission: Mission, host
 // region Barcode
 
 internal class BarcodeMission(context: Context, private val mission: Mission, host: Host) : MissionRunner(context, host) {
-
-  companion object {
-    fun isSupported(context: Context): Boolean =
-      BarcodeScannerView.hasCamera(context) && BarcodeScannerView.hasCameraPermission(context)
-  }
 
   override val title = "Scan"
   /** Walking to the bathroom to find the code takes a while. */
@@ -499,7 +513,9 @@ internal class BarcodeMission(context: Context, private val mission: Mission, ho
 
   init {
     scanner.onCode = { value, _ -> onCode(value) }
-    scanner.onError = { feedbackView.text = it; feedbackView.setTextColor(Ui.ERROR) }
+    scanner.onError = { host.onMissionUnavailable() }
+    scanner.onOpened = { torchButton.visibility = if (scanner.hasTorch) View.VISIBLE else View.GONE }
+    torchButton.visibility = View.GONE
   }
 
   private fun onCode(value: String) {
@@ -521,10 +537,12 @@ internal class BarcodeMission(context: Context, private val mission: Mission, ho
     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
   }
 
-  private fun toggleTorch() {
-    torchOn = !torchOn
-    scanner.setTorch(torchOn)
-    torchButton.text = if (torchOn) "Flashlight off" else "Flashlight"
+  private fun toggleTorch() = setTorch(!torchOn)
+
+  private fun setTorch(on: Boolean) {
+    torchOn = on
+    scanner.setTorch(on)
+    torchButton.text = if (on) "Flashlight off" else "Flashlight"
   }
 
   override fun start() = scanner.start()
@@ -532,6 +550,15 @@ internal class BarcodeMission(context: Context, private val mission: Mission, ho
   override fun stop() {
     handler.removeCallbacksAndMessages(null)
     scanner.stop()
+  }
+
+  override fun onHostHidden() {
+    scanner.stop() // the flashlight goes off with the camera
+    setTorch(false)
+  }
+
+  override fun onHostShown() {
+    if (!done) scanner.start()
   }
 }
 

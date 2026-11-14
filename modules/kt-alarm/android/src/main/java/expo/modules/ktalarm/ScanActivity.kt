@@ -10,8 +10,10 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 
 /**
  * Registers the code for a barcode mission. Uses the same [BarcodeScannerView] as the mission,
@@ -28,30 +30,45 @@ class ScanActivity : Activity() {
     const val EXTRA_ERROR = "expo.modules.ktalarm.SCAN_ERROR"
     const val ERROR_PERMISSION = "permission"
     private const val REQUEST_CAMERA = 1
+    /**
+     * Same value this many frames in a row before it's accepted. A misread code registered here
+     * would make the alarm impossible to turn off, so be sure.
+     */
+    private const val CONFIRM_READS = 3
 
     fun intent(context: Context): Intent = Intent(context, ScanActivity::class.java)
   }
 
   private lateinit var scanner: BarcodeScannerView
+  private lateinit var statusView: TextView
+  private lateinit var torchButton: Button
   private var torchOn = false
   private var delivered = false
+  private var candidate: String? = null
+  private var reads = 0
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setContentView(buildLayout())
-    scanner.onCode = { value, format -> deliver(value, format) }
-    if (!BarcodeScannerView.hasCameraPermission(this) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    scanner.onCode = { value, format -> onCode(value, format) }
+    scanner.onError = { message -> showError("$message. Close this screen and try again.") }
+    scanner.onOpened = {
+      showHint()
+      torchButton.visibility = if (scanner.hasTorch) View.VISIBLE else View.GONE
+    }
+    if (!CameraView.hasCameraPermission(this) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
       requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
     }
   }
 
   override fun onResume() {
     super.onResume()
-    if (BarcodeScannerView.hasCameraPermission(this)) scanner.start()
+    if (CameraView.hasCameraPermission(this) && !delivered) scanner.start()
   }
 
   override fun onPause() {
     scanner.stop()
+    setTorch(false)
     super.onPause()
   }
 
@@ -59,19 +76,41 @@ class ScanActivity : Activity() {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     if (requestCode != REQUEST_CAMERA) return
     if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-      scanner.start()
-    } else {
-      setResult(RESULT_CANCELED, Intent().putExtra(EXTRA_ERROR, ERROR_PERMISSION))
-      finish()
+      // onResume follows and starts the camera.
+      return
     }
+    setResult(RESULT_CANCELED, Intent().putExtra(EXTRA_ERROR, ERROR_PERMISSION))
+    finish()
   }
 
-  private fun deliver(value: String, format: String) {
+  private fun onCode(value: String, format: String) {
     if (delivered) return
+    if (value == candidate) reads++ else {
+      candidate = value
+      reads = 1
+    }
+    if (reads < CONFIRM_READS) return
     delivered = true
     scanner.stop()
     setResult(RESULT_OK, Intent().putExtra(EXTRA_VALUE, value).putExtra(EXTRA_FORMAT, format))
     finish()
+  }
+
+  private fun setTorch(on: Boolean) {
+    torchOn = on
+    scanner.setTorch(on)
+    torchButton.text = if (on) "Flashlight off" else "Flashlight"
+  }
+
+  private fun showHint() {
+    statusView.text = "Hold the code steady in the frame"
+    statusView.setTextColor(Ui.MUTED)
+  }
+
+  private fun showError(message: String) {
+    statusView.text = message
+    statusView.setTextColor(Ui.ERROR)
+    torchButton.visibility = View.GONE
   }
 
   private fun dp(v: Int) = Ui.dp(this, v)
@@ -121,13 +160,12 @@ class ScanActivity : Activity() {
       LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(20) },
     )
 
-    val torch = Ui.secondaryButton(this, "Flashlight") {}
-    torch.setOnClickListener {
-      torchOn = !torchOn
-      scanner.setTorch(torchOn)
-      torch.text = if (torchOn) "Flashlight off" else "Flashlight"
-    }
-    root.addView(torch, LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(16) })
+    statusView = Ui.text(this, 15f, Ui.MUTED, value = "Starting camera…")
+    root.addView(statusView, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+
+    torchButton = Ui.secondaryButton(this, "Flashlight") { setTorch(!torchOn) }
+    torchButton.visibility = View.GONE
+    root.addView(torchButton, LinearLayout.LayoutParams(-1, dp(56)).apply { topMargin = dp(12) })
 
     root.addView(
       Ui.secondaryButton(this, "Cancel") {

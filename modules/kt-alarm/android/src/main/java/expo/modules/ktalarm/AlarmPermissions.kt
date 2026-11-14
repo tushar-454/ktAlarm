@@ -25,6 +25,7 @@ object AlarmPermissions {
     "fullScreenIntent" to hasFullScreenIntent(context),
     "batteryOptimizationIgnored" to isIgnoringBatteryOptimizations(context),
     "overlay" to hasOverlay(context),
+    "camera" to CameraView.hasCameraPermission(context),
   )
 
   fun hasNotifications(context: Context): Boolean {

@@ -80,6 +80,8 @@ export type PermissionStatus = {
   batteryOptimizationIgnored: boolean;
   /** "Display over other apps" — lets the alarm screen open even while the phone is in use. */
   overlay: boolean;
+  /** Camera, for the squat and barcode missions. Android only (missing on iOS). */
+  camera?: boolean;
 };
 
 type KtAlarmEvents = {
@@ -114,6 +116,8 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
 
   getPermissionStatus(): PermissionStatus;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
+  /** Camera, for the squat and barcode missions. Android only. */
+  requestCameraPermission(): Promise<{ granted: boolean; canAskAgain?: boolean }>;
   openExactAlarmSettings(): void;
   openFullScreenIntentSettings(): void;
   requestIgnoreBatteryOptimizations(): void;
@@ -132,7 +136,7 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
  * - `ERR_ALARM_LOCKED`: mission alarm is ringing/snoozed; finish the mission first
  * - `ERR_OVERLAY_REQUIRED`: mission alarms need "Display over other apps"
  * - `ERR_INVALID_MISSION`: unknown mission type, or barcode mission without a code
- * - `ERR_CAMERA_PERMISSION`: camera denied while registering a code
+ * - `ERR_CAMERA_PERMISSION`: camera denied (registering a code, camera missions)
  */
 export function errorCode(e: unknown): string | undefined {
   return typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : undefined;
