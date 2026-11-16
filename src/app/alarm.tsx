@@ -311,7 +311,7 @@ export default function AlarmEditorScreen() {
                     <Text className="mt-4 text-sm font-semibold text-neutral-900 dark:text-white">
                       {index + 1}. {missionInfo(mission.type).title}
                     </Text>
-                    <MissionSettings mission={mission} onChange={(updated) =>
+                    <MissionSettings mission={mission} backgroundUri={background?.uri ?? null} onChange={(updated) =>
                       setMissions((current) => current.map((m) => m.type === updated.type ? updated : m))
                     } />
                   </View>
@@ -362,11 +362,9 @@ export default function AlarmEditorScreen() {
                   </Pressable>
                 ))}
               </View>
-              {background && (
-                <Image source={backgroundSource(background.uri)} contentFit="cover"
-                  style={{ width: '100%', height: 180, borderRadius: 16, marginBottom: 12 }}
-                  accessibilityLabel="Selected alarm background" />
-              )}
+              <Image source={backgroundSource(background?.uri ?? null)} contentFit="cover"
+                style={{ width: '100%', height: 180, borderRadius: 16, marginBottom: 12 }}
+                accessibilityLabel={`${background?.name ?? 'Default dark'} alarm background`} />
               <MediaChoice label={background?.name ?? 'Default dark background'} selected={!!background}
                 disabled={pickingMedia || locked} onPick={() => void pickMedia('image')}
                 onClear={() => setBackground(null)} />
@@ -433,8 +431,10 @@ export default function AlarmEditorScreen() {
   );
 }
 
-function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m: Mission) => void }) {
-  if (mission.type === 'barcode') return <BarcodeSettings mission={mission} onChange={onChange} />;
+type MissionSettingsProps = { mission: Mission; backgroundUri: string | null; onChange: (m: Mission) => void };
+
+function MissionSettings({ mission, backgroundUri, onChange }: MissionSettingsProps) {
+  if (mission.type === 'barcode') return <BarcodeSettings mission={mission} backgroundUri={backgroundUri} onChange={onChange} />;
   const info = missionInfo(mission.type);
   const setCount = (count: number) =>
     onChange({ ...mission, count: Math.min(info.max, Math.max(info.min, count)) });
@@ -488,12 +488,12 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
         </View>
       </View>
 
-      <PreviewButton mission={mission} />
+      <PreviewButton mission={mission} backgroundUri={backgroundUri} />
     </View>
   );
 }
 
-function BarcodeSettings({ mission, onChange }: { mission: Mission; onChange: (m: Mission) => void }) {
+function BarcodeSettings({ mission, backgroundUri, onChange }: MissionSettingsProps) {
   const [scanning, setScanning] = useState(false);
   const registered = !!mission.barcodeValue;
 
@@ -549,18 +549,22 @@ function BarcodeSettings({ mission, onChange }: { mission: Mission; onChange: (m
         <Text className="text-sm font-semibold text-white">{registered ? 'Scan a different code' : 'Register code'}</Text>
       </Pressable>
 
-      {registered && <PreviewButton mission={mission} />}
+      {registered && <PreviewButton mission={mission} backgroundUri={backgroundUri} />}
     </View>
   );
 }
 
-function PreviewButton({ mission }: { mission: Mission }) {
+function PreviewButton({ mission, backgroundUri }: { mission: Mission; backgroundUri: string | null }) {
   return (
     <Pressable
       onPress={async () => {
-        if (usesCamera(mission.type) && !(await ensureCamera())) return;
-        if (mission.type === 'walk') await enableStepDetection();
-        KtAlarm?.previewMission(mission);
+        try {
+          if (usesCamera(mission.type) && !(await ensureCamera())) return;
+          if (mission.type === 'walk') await enableStepDetection();
+          KtAlarm?.previewMission(mission, backgroundUri);
+        } catch (e) {
+          Alert.alert('Could not preview mission', e instanceof Error ? e.message : String(e));
+        }
       }}
       accessibilityRole="button"
       className="mt-4 items-center rounded-full border-2 py-2.5 active:opacity-60"

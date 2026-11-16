@@ -51,14 +51,16 @@ public class KtAlarmModule: Module {
       onAlarmMain { AlarmEngine.shared.sync(); return AlarmEngine.shared.ringingID }
     }
 
-    Function("previewMission") { (input: MissionInputRecord) throws in
+    Function("previewMission") { (input: MissionInputRecord, backgroundUri: String?) throws in
       let mission = try input.mission()
+      let background = try AlarmMedia.checked(backgroundUri, kind: "image")
       onAlarmMain {
         guard !AlarmStore.all().contains(where: { $0.locked }) else { return }
         var alarm = StoredAlarm(id: "__preview__", hour: Calendar.current.component(.hour, from: Date()),
           minute: Calendar.current.component(.minute, from: Date()), label: "Mission preview",
           days: [], enabled: false, vibrate: false, snoozeMinutes: 5)
         alarm.missions = [mission]
+        alarm.backgroundUri = background
         AlarmMissionPresenter.shared.present(alarm, preview: true)
       }
     }

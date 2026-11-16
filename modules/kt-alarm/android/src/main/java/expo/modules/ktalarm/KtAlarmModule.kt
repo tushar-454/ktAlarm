@@ -213,9 +213,10 @@ class KtAlarmModule : Module() {
     Function("dismiss") { id: String -> AlarmController.dismiss(context, id) }
 
     /** Runs a mission on the native alarm screen without ringing, to try it out. */
-    Function("previewMission") { input: MissionInput ->
+    Function("previewMission") { input: MissionInput, backgroundUri: String? ->
       val mission = input.toMission() ?: throw InvalidMissionException()
-      launcherContext.startActivity(AlarmActivity.previewIntent(launcherContext, mission))
+      val background = AlarmMediaStore.checkedUri(context, backgroundUri, "background")
+      launcherContext.startActivity(AlarmActivity.previewIntent(launcherContext, mission, background))
     }
 
     /** Opens the native scanner to register a barcode mission's code. Resolves null if cancelled. */

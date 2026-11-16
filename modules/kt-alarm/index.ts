@@ -126,8 +126,8 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   snooze(id: string): boolean | Promise<boolean>;
   /** Returns false for a locked mission alarm. */
   dismiss(id: string): boolean;
-  /** Opens the native mission screen without ringing, to try a mission. */
-  previewMission(mission: Mission): void;
+  /** Opens the native mission screen without ringing, using the editor's selected background. */
+  previewMission(mission: Mission, backgroundUri: string | null): void;
   /**
    * Opens the native camera scanner to register a barcode mission's code. Resolves null when
    * cancelled; rejects with `ERR_CAMERA_PERMISSION` if the camera is denied.

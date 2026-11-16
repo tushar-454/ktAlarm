@@ -44,6 +44,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   companion object {
     private const val TAG = "KtAlarm"
     private const val EXTRA_PREVIEW_MISSION = "expo.modules.ktalarm.PREVIEW_MISSION"
+    private const val EXTRA_PREVIEW_BACKGROUND = "expo.modules.ktalarm.PREVIEW_BACKGROUND"
     private const val RELAUNCH_DELAY_MS = 300L
     private val VOLUME_KEYS = setOf(
       KeyEvent.KEYCODE_VOLUME_UP,
@@ -60,9 +61,10 @@ class AlarmActivity : Activity(), MissionRunner.Host {
             Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
         )
 
-    fun previewIntent(context: Context, mission: Mission): Intent =
+    fun previewIntent(context: Context, mission: Mission, backgroundUri: String?): Intent =
       Intent(context, AlarmActivity::class.java)
         .putExtra(EXTRA_PREVIEW_MISSION, mission.toJson().toString())
+        .putExtra(EXTRA_PREVIEW_BACKGROUND, backgroundUri)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
   }
 
@@ -219,7 +221,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       alarmId = null
       alarm = null
       previewMission = preview
-      loadBackground(null)
+      loadBackground(intent.getStringExtra(EXTRA_PREVIEW_BACKGROUND))
       startMission(preview)
       return
     }
@@ -357,10 +359,12 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     if (loadedBackground == uri) return
     loadedBackground = uri
     backgroundView.setImageDrawable(null)
+    backgroundView.background = null
     backgroundShade.visibility = View.GONE
     if (uri == null) return
     PresetMedia.background(uri)?.let {
-      backgroundView.setImageDrawable(it)
+      // Gradients have no intrinsic image size; a view background always fills its bounds.
+      backgroundView.background = it
       backgroundShade.visibility = View.VISIBLE
       return
     }
@@ -432,7 +436,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
     backgroundShade = View(this).apply {
-      setBackgroundColor(Color.argb(175, 0, 0, 0))
+      setBackgroundColor(Color.argb(102, 0, 0, 0))
       visibility = View.GONE
     }
     root.addView(backgroundView, FrameLayout.LayoutParams(-1, -1))

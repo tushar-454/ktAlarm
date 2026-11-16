@@ -10,6 +10,19 @@ the source of truth for native behavior. When changing orientation, icons, schem
 platform identifiers or config plugins, update/check the corresponding native projects too.
 Do not delete or regenerate the native projects as a way to clear a Doctor warning.
 
+The launcher artwork is in `assets/images/icon.png`, with transparent splash/adaptive artwork
+in `splash-icon.png` and `android-icon-foreground.png` and a themed Android mask in
+`android-icon-monochrome.png`. The splash and native root background use charcoal `#0E1116`
+in both appearances. After updating the artwork or its `app.json` configuration, run
+`node scripts/sync-branding.cjs` to apply only the branding plugins to the committed native
+projects. This also switches Xcode from the Expo starter icon to the new AppIcon catalog.
+
+Alarm background thumbnails are bundled PNGs. Regenerate them with
+`node scripts/generate-background-presets.cjs`; keep the palettes aligned with the native
+Android and iOS renderers. Mission previews use the current editor background without saving
+or scheduling an alarm. The Dark option clears the stored selection and uses `#0E1116`.
+Rebuild and reinstall the app to pick up the new native preview API, icons and splash resources.
+
 The Expo Doctor `appConfigFieldsNotSyncedCheck` is disabled for this intentional native-project
 workflow, as supported by Expo. All dependency, config-schema and other Doctor checks remain enabled.
 

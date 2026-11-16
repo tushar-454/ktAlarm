@@ -427,15 +427,19 @@ private struct AlarmMissionView: View {
       GeometryReader { geometry in
         Image(uiImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped()
       }
-      Color.black.opacity(0.6)
+      Color.black.opacity(0.4)
     } else {
       let palettes: [String: [Color]] = [
-        "preset:dawn": [Color(red: 0.17, green: 0.1, blue: 0.26), Color(red: 0.77, green: 0.39, blue: 0.38)],
-        "preset:forest": [Color(red: 0.03, green: 0.1, blue: 0.12), Color(red: 0.1, green: 0.3, blue: 0.27)],
-        "preset:midnight": [Color(red: 0.03, green: 0.06, blue: 0.17), Color(red: 0.13, green: 0.16, blue: 0.36)],
-        "preset:sea": [Color(red: 0.03, green: 0.12, blue: 0.22), Color(red: 0.11, green: 0.35, blue: 0.44)]]
-      LinearGradient(colors: palettes[session.alarm.backgroundUri ?? ""] ?? [.black, Color(white: 0.08)],
-        startPoint: .top, endPoint: .bottom)
+        "preset:dawn": [Color(red: 43/255, green: 25/255, blue: 66/255), Color(red: 196/255, green: 100/255, blue: 98/255), Color(red: 244/255, green: 178/255, blue: 125/255)],
+        "preset:forest": [Color(red: 7/255, green: 26/255, blue: 30/255), Color(red: 25/255, green: 75/255, blue: 70/255), Color(red: 88/255, green: 137/255, blue: 115/255)],
+        "preset:midnight": [Color(red: 8/255, green: 15/255, blue: 43/255), Color(red: 34/255, green: 42/255, blue: 92/255), Color(red: 78/255, green: 66/255, blue: 123/255)],
+        "preset:sea": [Color(red: 8/255, green: 31/255, blue: 57/255), Color(red: 27/255, green: 88/255, blue: 113/255), Color(red: 97/255, green: 164/255, blue: 168/255)]]
+      if let colors = palettes[session.alarm.backgroundUri ?? ""] {
+        LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+        Color.black.opacity(0.4)
+      } else {
+        Color(red: 14/255, green: 17/255, blue: 22/255)
+      }
     }
   }
 }
