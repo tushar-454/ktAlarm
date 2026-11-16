@@ -15,13 +15,18 @@ Related code: [index.tsx:14](/home/tushar/Documents/code/ktAlerm/src/app/index.t
 | Create, edit, delete, toggle | Implemented | Implemented using AlarmKit on iOS 26+ |
 | One-time / weekday repeats | Implemented | Implemented |
 | Labels, vibration, snooze length | Implemented | Label and snooze length passed to AlarmKit; vibration stored but not explicitly applied in scheduling |
-| Snooze limits | Implemented | No limit field or enforcement |
-| Wake-up missions | Five types; one mission per alarm | Not implemented |
-| Mission targets / difficulty | Implemented | Not implemented |
-| Mission preview | Implemented | Not implemented |
-| Lock active mission alarms | Native guards plus UI | Not implemented |
-| Uninstall protection | Optional device administrator | Not implemented |
+| Snooze limits | Implemented | Persisted counters and system/in-app enforcement |
+| Wake-up missions | Six types; ordered chains | Six types; ordered in-app chains |
+| Mission targets / difficulty | Implemented | Implemented |
+| Mission preview | Implemented | Native SwiftUI preview |
+| Lock active mission alarms | Native guards plus UI | Native guards for edits, toggles, deletion and plain dismiss |
+| Uninstall protection | Optional device administrator | No equivalent consumer iOS API |
 | Permission management / lock-screen alerts | Native settings helpers, service, notification, activity | AlarmKit authorization and system presentation |
+
+The iOS implementation is described in [IOS_PARITY.md](IOS_PARITY.md), including system Stop behavior,
+custom media, sleep audio, build requirements, and the physical-device checks still required.
+The older Android source excerpts below predate support for multiple missions and custom media;
+the native source remains authoritative for those details.
 
 ## 1. Create, edit, delete, and toggle alarms
 

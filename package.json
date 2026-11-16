@@ -41,6 +41,8 @@
     "android": "expo run:android",
     "build:apk": "npx eas-cli@latest build --platform android --profile preview",
     "build:apk:local": "cd android && ./gradlew assembleRelease",
+    "build:ipa": "npx eas-cli@latest build --platform ios --profile preview",
+    "ios:device:register": "npx eas-cli@latest device:create",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"

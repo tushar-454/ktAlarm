@@ -12,7 +12,10 @@
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.imtushar454.ktAlerm",
       "infoPlist": {
-        "NSAlarmKitUsageDescription": "ktAlerm schedules alarms that ring at the time you choose, even when the app is closed."
+        "NSAlarmKitUsageDescription": "ktAlerm schedules alarms that ring at the time you choose, even when the app is closed.",
+        "NSCameraUsageDescription": "ktAlerm uses the camera to register barcodes and complete barcode and squat wake-up missions.",
+        "NSMotionUsageDescription": "ktAlerm counts your steps to complete walking wake-up missions.",
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
@@ -31,6 +34,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/with-kt-alarm-ios",
       [
         "expo-splash-screen",
         {

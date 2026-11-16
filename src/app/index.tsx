@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PermissionCard } from '@/components/permission-card';
 import { UninstallProtectionCard } from '@/components/uninstall-protection-card';
 import { useAlarmPermissions, useAlarms, useNow } from '@/hooks/use-alarms';
+import { SLEEP_SUPPORTED } from '@/hooks/use-sleep-sound';
 import { formatCountdown, formatDays, formatTime } from '@/lib/alarm-format';
 import { describeMission, missionInfo } from '@/lib/missions';
 
@@ -38,7 +39,7 @@ export default function AlarmsScreen() {
               </Text>
             </View>
             <PermissionCard status={status} />
-            {Platform.OS === 'android' && KtAlarm && (
+            {SLEEP_SUPPORTED && (
               <Pressable onPress={() => router.push('/sleep')} accessibilityRole="button"
                 className="mx-5 mb-5 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
                 <Text className="text-base font-semibold text-neutral-900 dark:text-white">🌙 Sleep sounds</Text>
@@ -47,7 +48,7 @@ export default function AlarmsScreen() {
             )}
             {!KtAlarm && (
               <Text className="mx-6 mb-4 text-sm text-red-500">
-                Native alarm module not found. Run a development build: npx expo run:android
+                Native alarm module not found. Run a development build: npx expo run:{Platform.OS === 'ios' ? 'ios' : 'android'}
               </Text>
             )}
           </>
@@ -118,7 +119,7 @@ function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
             {(alarm.missions?.length ?? 0) > 1 ? ` + ${alarm.missions!.length - 1} more` : ''}
           </Text>
         )}
-        {Platform.OS === 'android' && (
+        {SLEEP_SUPPORTED && (
           <Pressable onPress={() => router.push({ pathname: '/sleep', params: { id: alarm.id } })}
             accessibilityRole="button" className="mt-2 self-start py-1">
             <Text className="text-xs font-semibold text-[#FF8A3D]">🌙 Start sleep sounds</Text>

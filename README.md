@@ -19,6 +19,28 @@ provides a Stop action. Durations are elapsed-time based and support 1–720 min
 Built-in noise loops and ringtones are original synthesized PCM audio; regenerate them with
 `python3 scripts/generate-audio-presets.py`. No third-party recordings are bundled.
 
+iOS also implements mission chains and previews, barcode registration, camera squat counting,
+walking/shake detection, custom ringtones/backgrounds, snooze limits, and background sleep sounds.
+See [iOS feature parity and device checks](IOS_PARITY.md) for the implementation map and platform
+limits. Wake-up alarms require iOS 26+. Rebuild the native app after pulling these changes;
+JavaScript reloads and Expo Go cannot install the Swift implementation or its bundled sounds.
+
+## Installable iPhone build
+
+Register each iPhone before building, then create the signed IPA in EAS:
+
+```bash
+npm run ios:device:register
+npm run build:ipa
+```
+
+Sign in to Expo and your paid Apple Developer account when prompted. The `preview` profile uses
+internal distribution and a physical-device Release build with bundled JavaScript, so Metro is
+not required. After the build succeeds, open EAS's install link on the registered iPhone to install
+the app. Only devices included in the signing profile can install this build; after registering
+another device, build again and include it when EAS prompts for the device list.
+See [Expo's internal distribution guide](https://docs.expo.dev/build/internal-distribution/).
+
 ## Get started
 
 1. Install dependencies

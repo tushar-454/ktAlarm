@@ -1,3 +1,5 @@
+import AppIntents
+import KtAlarm
 internal import Expo
 import React
 import ReactAppDependencyProvider
@@ -42,3 +44,11 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
 #endif
   }
 }
+
+// ktAlerm AlarmKit intent registration
+#if canImport(AlarmKit)
+@available(iOS 26.0, *)
+struct KtAlarmAppIntentPackage: AppIntentsPackage {
+  static var includedPackages: [any AppIntentsPackage.Type] { [KtAlarmIntentPackage.self] }
+}
+#endif

@@ -89,5 +89,13 @@
     <true/>
     <key>NSAlarmKitUsageDescription</key>
     <string>ktAlerm schedules alarms that ring at the time you choose, even when the app is closed.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>ktAlerm uses the camera to register barcodes and complete barcode and squat wake-up missions.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>ktAlerm counts your steps to complete walking wake-up missions.</string>
+    <key>UIBackgroundModes</key>
+    <array>
+      <string>audio</string>
+    </array>
   </dict>
 </plist>

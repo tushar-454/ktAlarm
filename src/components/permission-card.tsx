@@ -45,7 +45,19 @@ const ITEMS: Item[] = [
 ];
 
 export function PermissionCard({ status }: { status: PermissionStatus }) {
-  const missing = ITEMS.filter((i) => !status[i.key]);
+  if (Platform.OS === 'ios' && status.alarmsSupported === false) {
+    return (
+      <View className="mx-5 mb-4 rounded-3xl bg-orange-50 p-4 dark:bg-[#2A1C12]">
+        <Text className="text-base font-semibold text-orange-900 dark:text-orange-200">Wake-up alarms need iOS 26 or newer</Text>
+        <Text className="mt-1 text-sm text-orange-800/80 dark:text-orange-200/70">
+          Update iOS to schedule system alarms. Sleep sounds and mission previews are available on this device.
+        </Text>
+      </View>
+    );
+  }
+  const items = Platform.OS === 'ios' ? [{ ...ITEMS[0], title: 'Alarm access',
+    why: 'Allows system alarms to ring while the iPhone is locked.' }] : ITEMS;
+  const missing = items.filter((i) => !status[i.key]);
   if (missing.length === 0 || !KtAlarm) return null;
 
   return (

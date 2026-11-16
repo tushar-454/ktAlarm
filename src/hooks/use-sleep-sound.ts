@@ -2,7 +2,7 @@ import KtAlarm, { type SleepSoundState } from 'kt-alarm';
 import { useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 
-export const SLEEP_SUPPORTED = Platform.OS === 'android' && !!KtAlarm;
+export const SLEEP_SUPPORTED = (Platform.OS === 'android' || Platform.OS === 'ios') && !!KtAlarm;
 export function readSleepSound(): SleepSoundState | null {
   return SLEEP_SUPPORTED ? KtAlarm!.getSleepSoundState() : null;
 }

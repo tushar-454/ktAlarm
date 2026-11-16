@@ -19,4 +19,8 @@ Pod::Spec.new do |s|
   }
 
   s.source_files = "**/*.{h,m,swift}"
+  s.exclude_files = 'Tests/**/*'
+  # Reuse the original audio loops without changing Android's resources.
+  s.resource_bundles = { 'KtAlarmMedia' => ['../android/src/main/res/raw/*.wav'] }
+  s.frameworks = 'AVFoundation', 'CoreMotion', 'Vision', 'MediaPlayer', 'AppIntents', 'SwiftUI'
 end

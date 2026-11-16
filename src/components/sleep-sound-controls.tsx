@@ -1,6 +1,6 @@
 import KtAlarm, { type AlarmMedia } from 'kt-alarm';
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-alarms';
 import { SLEEP_SUPPORTED, useSleepSound } from '@/hooks/use-sleep-sound';
@@ -35,7 +35,7 @@ export function SleepSoundControls({ sound, minutes, onSoundChange, onMinutesCha
     if (!KtAlarm || !validMinutes) return;
     setBusy(true);
     try {
-      if (!KtAlarm.getPermissionStatus().notifications) await KtAlarm.requestNotificationPermission();
+      if (Platform.OS === 'android' && !KtAlarm.getPermissionStatus().notifications) await KtAlarm.requestNotificationPermission();
       await KtAlarm.startSleepSound({ ...sound, minutes: Number(duration), alarmId });
     } catch (e) { error(e); }
     finally { setBusy(false); }

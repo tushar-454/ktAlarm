@@ -52,10 +52,7 @@ export type Alarm = {
   snoozeUntil: number | null;
   /** Epoch ms of the next ring, null when disabled. */
   nextTriggerAt: number | null;
-  /**
-   * Missions required to dismiss, completed in order. Android only for now — iOS
-   * returns no field, so read it as `alarm.missions ?? []`.
-   */
+  /** Missions completed in order. On iOS they run in-app after opening the system alarm. */
   missions?: Mission[];
   ringtoneUri?: string | null;
   ringtoneName?: string | null;
@@ -106,10 +103,12 @@ export type PermissionStatus = {
   batteryOptimizationIgnored: boolean;
   /** "Display over other apps" — lets the alarm screen open even while the phone is in use. */
   overlay: boolean;
-  /** Camera, for the squat and barcode missions. Android only (missing on iOS). */
+  /** Camera, for the squat and barcode missions. */
   camera?: boolean;
   activityRecognition?: boolean;
   stepDetector?: boolean;
+  /** iOS requires 26+ for AlarmKit. Missing on Android (supported). */
+  alarmsSupported?: boolean;
 };
 
 type KtAlarmEvents = {
@@ -123,18 +122,18 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   saveAlarm(input: AlarmInput): Promise<Alarm>;
   deleteAlarm(id: string): Promise<void>;
   setAlarmEnabled(id: string, enabled: boolean): Promise<void>;
-  /** Returns false when no snoozes are left. */
-  snooze(id: string): boolean;
+  /** Returns false when no snoozes are left. iOS schedules its next alert asynchronously. */
+  snooze(id: string): boolean | Promise<boolean>;
   /** Returns false for a locked mission alarm. */
   dismiss(id: string): boolean;
-  /** Opens the native mission screen without ringing, to try a mission. Android only. */
+  /** Opens the native mission screen without ringing, to try a mission. */
   previewMission(mission: Mission): void;
   /**
    * Opens the native camera scanner to register a barcode mission's code. Resolves null when
-   * cancelled; rejects with `ERR_CAMERA_PERMISSION` if the camera is denied. Android only.
+   * cancelled; rejects with `ERR_CAMERA_PERMISSION` if the camera is denied.
    */
   scanBarcode(): Promise<ScannedCode | null>;
-  /** Android system picker grants access only to the selected file; imports a durable copy. */
+  /** System file picker grants access only to the selected file; imports a durable copy. */
   pickAlarmMedia(kind: 'audio' | 'image'): Promise<AlarmMedia | null>;
   getSleepSoundState(): SleepSoundState;
   startSleepSound(input: SleepSoundInput): Promise<void>;
@@ -150,7 +149,7 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
 
   getPermissionStatus(): PermissionStatus;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
-  /** Camera, for the squat and barcode missions. Android only. */
+  /** Camera, for the squat and barcode missions. */
   requestCameraPermission(): Promise<{ granted: boolean; canAskAgain?: boolean }>;
   requestActivityRecognitionPermission(): Promise<{ granted: boolean }>;
   openExactAlarmSettings(): void;

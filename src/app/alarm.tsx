@@ -21,8 +21,7 @@ import {
 
 const ACCENT = '#FF8A3D';
 const SNOOZE_OPTIONS = [5, 10, 15, 20];
-/** Missions run on the native Android alarm screen; iOS support comes separately. */
-const MISSIONS_SUPPORTED = Platform.OS === 'android';
+const MISSIONS_SUPPORTED = !!KtAlarm && (Platform.OS === 'android' || Platform.OS === 'ios');
 
 function defaultTime() {
   const d = new Date(Date.now() + 60 * 60 * 1000);
@@ -122,7 +121,7 @@ export default function AlarmEditorScreen() {
       return;
     }
     if (missions.some((m) => usesCamera(m.type)) && !(await ensureCamera())) return;
-    if (missions.length > 0 && !KtAlarm.getPermissionStatus().overlay) {
+    if (Platform.OS === 'android' && missions.length > 0 && !KtAlarm.getPermissionStatus().overlay) {
       Alert.alert(
         'One more permission',
         'Mission alarms need "Display over other apps" so the mission screen comes back if you press Home. Allow it, then tap Save again.',
@@ -284,6 +283,13 @@ export default function AlarmEditorScreen() {
         {/* Mission */}
         {MISSIONS_SUPPORTED && (
           <Section title="Wake-up missions">
+            {Platform.OS === 'ios' && (
+              <Text className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                Stop the iPhone alarm to open your missions in the app. iOS controls the
+                lock-screen alarm and lets you silence it or leave the app. Missions keep this alarm
+                locked for editing until completed; they cannot force the app to stay open.
+              </Text>
+            )}
             <View className="flex-row flex-wrap gap-2">
               <Chip label="None" active={missions.length === 0} onPress={() => pickMission(null)} />
               {MISSIONS.map((m) => (
@@ -313,7 +319,8 @@ export default function AlarmEditorScreen() {
               </>
             ) : (
               <Text className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
-                Add a mission and the alarm won&apos;t stop until you complete it.
+                {Platform.OS === 'ios' ? 'Add missions to complete after opening your wake-up alarm.'
+                  : 'Add a mission and the alarm won’t stop until you complete it.'}
               </Text>
             )}
           </Section>
@@ -322,6 +329,11 @@ export default function AlarmEditorScreen() {
         {MISSIONS_SUPPORTED && (
           <>
             <Section title="Ringtone">
+              {Platform.OS === 'ios' && (
+                <Text className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                  Imported audio uses its first 29 seconds as the system alarm sound.
+                </Text>
+              )}
               <View className="mb-3 flex-row flex-wrap gap-2">
                 <Chip label="System alarm" active={!ringtone} onPress={() => setRingtone(null)} />
                 {RINGTONE_PRESETS.map((preset) => (
@@ -334,6 +346,11 @@ export default function AlarmEditorScreen() {
                 onClear={() => setRingtone(null)} />
             </Section>
             <Section title="Alarm background">
+              {Platform.OS === 'ios' && (
+                <Text className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                  Shown on the mission screen inside the app. iOS controls the lock-screen background.
+                </Text>
+              )}
               <View className="mb-3 flex-row flex-wrap gap-2">
                 <Chip label="Dark" active={!background} onPress={() => setBackground(null)} />
                 {BACKGROUND_PRESETS.map((preset) => (
@@ -396,15 +413,15 @@ export default function AlarmEditorScreen() {
         )}
 
         {/* Vibrate */}
-        <View className="mx-5 mt-6 flex-row items-center justify-between rounded-2xl bg-neutral-100 px-4 py-3 dark:bg-[#1A1F27]">
-          <Text className="text-base text-neutral-900 dark:text-white">Vibrate</Text>
+        {(Platform.OS !== 'ios' || missions.length > 0) && <View className="mx-5 mt-6 flex-row items-center justify-between rounded-2xl bg-neutral-100 px-4 py-3 dark:bg-[#1A1F27]">
+          <Text className="text-base text-neutral-900 dark:text-white">{Platform.OS === 'ios' ? 'Vibrate during missions' : 'Vibrate'}</Text>
           <Switch
             value={vibrate}
             onValueChange={setVibrate}
             trackColor={{ true: ACCENT, false: '#9CA3AF55' }}
             thumbColor="#FFFFFF"
           />
-        </View>
+        </View>}
 
         {existing && !locked && (
           <Pressable onPress={remove} className="mx-5 mt-8 items-center rounded-2xl py-3.5 active:opacity-60">
@@ -428,11 +445,11 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
         <View className="mb-4">
           <Text className="text-sm text-neutral-600 dark:text-neutral-400">
           Keep your phone in your trouser pocket and walk naturally. Physical activity access uses
-          Android&apos;s step detector; otherwise, a stricter motion estimate counts full strides.
+          {Platform.OS === 'ios' ? 'iPhone step counting' : 'Android’s step detector'}; otherwise, a stricter motion estimate counts full strides.
           The first few strides warm up the estimate. No location access is needed.
           </Text>
           <Pressable onPress={() => void enableStepDetection()} accessibilityRole="button" className="mt-2 py-2">
-            <Text className="text-sm font-semibold text-[#FF8A3D]">Enable Android step detection</Text>
+            <Text className="text-sm font-semibold text-[#FF8A3D]">{Platform.OS === 'ios' ? 'Enable Motion & Fitness' : 'Enable Android step detection'}</Text>
           </Pressable>
         </View>
       )}
