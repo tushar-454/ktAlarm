@@ -32,16 +32,22 @@ class AlarmTimePickerView(context: Context, appContext: AppContext) : ExpoView(c
   private val hours: Wheel = Wheel(context, 12, "Hours", true) { emitTime() }
   private val minutes: Wheel = Wheel(context, 60, "Minutes", false) { emitTime() }
   private val colon = Ui.text(context, 42f, value = ":")
-  private val period = Button(context).apply {
-    text = "AM"
+  private val amButton = periodButton("AM", false)
+  private val pmButton = periodButton("PM", true)
+
+  private fun periodButton(label: String, selectsPm: Boolean) = Button(context).apply {
+    text = label
     textSize = 16f
-    contentDescription = "AM, tap to switch to PM"
-    setTextColor(Ui.ACCENT)
-    background = Ui.rounded(context, Color.TRANSPARENT, Ui.ACCENT, 16)
+    setPadding(0, 0, 0, 0)
+    minimumWidth = 0
+    minimumHeight = 0
+    stateListAnimator = null
     setOnClickListener {
-      pm = !pm
-      updatePeriod()
-      emitTime()
+      if (pm != selectsPm) {
+        pm = selectsPm
+        updatePeriod()
+        emitTime()
+      }
     }
   }
 
@@ -51,9 +57,17 @@ class AlarmTimePickerView(context: Context, appContext: AppContext) : ExpoView(c
     addView(hours, LayoutParams(0, -1, 1f))
     addView(colon, LayoutParams(Ui.dp(context, 30), -1))
     addView(minutes, LayoutParams(0, -1, 1f))
-    addView(period, LayoutParams(Ui.dp(context, 60), Ui.dp(context, 48)).apply {
+    val periods = LinearLayout(context).apply {
+      orientation = LinearLayout.VERTICAL
+      addView(amButton, LinearLayout.LayoutParams(-1, Ui.dp(context, 48)))
+      addView(pmButton, LinearLayout.LayoutParams(-1, Ui.dp(context, 48)).apply {
+        topMargin = Ui.dp(context, 8)
+      })
+    }
+    addView(periods, LayoutParams(Ui.dp(context, 60), -2).apply {
       marginStart = Ui.dp(context, 8)
     })
+    updatePeriod()
   }
 
   fun setInitialHour(value: Int) {
@@ -73,8 +87,11 @@ class AlarmTimePickerView(context: Context, appContext: AppContext) : ExpoView(c
     onTimeChanged(mapOf("hour" to hours.value + if (pm) 12 else 0, "minute" to minutes.value))
   }
   private fun updatePeriod() {
-    period.text = if (pm) "PM" else "AM"
-    period.contentDescription = "${period.text}, tap to switch to ${if (pm) "AM" else "PM"}"
+    for ((button, selected) in listOf(amButton to !pm, pmButton to pm)) {
+      button.isSelected = selected
+      button.setTextColor(if (selected) Ui.BG else Ui.ACCENT)
+      button.background = Ui.rounded(context, if (selected) Ui.ACCENT else Color.TRANSPARENT, Ui.ACCENT, 16)
+    }
   }
 }
 

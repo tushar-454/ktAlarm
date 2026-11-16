@@ -31,7 +31,7 @@ export function TimePicker({ hour, minute, onChange }: TimePickerProps) {
         </Text>
       )}
       <Text className="mt-2 text-center text-xs text-neutral-500 dark:text-neutral-400">
-        Hours · Minutes · Swipe to set, tap AM/PM
+        Hours · Minutes · Swipe to set
       </Text>
     </View>
   );
