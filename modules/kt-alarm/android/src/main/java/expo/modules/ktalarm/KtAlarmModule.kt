@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import expo.modules.interfaces.permissions.Permissions
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -43,6 +44,16 @@ data class AlarmInput(
   @Field val ringtoneName: String? = null,
   @Field val backgroundUri: String? = null,
   @Field val backgroundName: String? = null,
+  @Field val sleepSoundUri: String? = null,
+  @Field val sleepSoundName: String? = null,
+  @Field val sleepSoundMinutes: Int = 30,
+) : Record
+
+data class SleepSoundInput(
+  @Field val uri: String = "preset:pink",
+  @Field val name: String = "Pink noise",
+  @Field val minutes: Int = 30,
+  @Field val alarmId: String? = null,
 ) : Record
 
 class AlarmLockedException :
@@ -86,13 +97,14 @@ class KtAlarmModule : Module() {
     when (type) {
       AlarmEvents.Type.ALARMS_CHANGED -> sendEvent("onAlarmsChanged", mapOf<String, Any?>())
       AlarmEvents.Type.RINGING_CHANGED -> sendEvent("onRingingChanged", mapOf("alarmId" to ringingId))
+      AlarmEvents.Type.SLEEP_SOUND_CHANGED -> sendEvent("onSleepSoundChanged", SleepSoundStore.state(context))
     }
   }
 
   override fun definition() = ModuleDefinition {
     Name("KtAlarm")
 
-    Events("onAlarmsChanged", "onRingingChanged")
+    Events("onAlarmsChanged", "onRingingChanged", "onSleepSoundChanged")
 
     View(AlarmTimePickerView::class) {
       Events("onTimeChanged")
@@ -174,8 +186,11 @@ class KtAlarmModule : Module() {
         snoozeCount = 0,
         ringtoneUri = AlarmMediaStore.checkedUri(context, input.ringtoneUri),
         ringtoneName = input.ringtoneName?.take(120),
-        backgroundUri = AlarmMediaStore.checkedUri(context, input.backgroundUri),
+        backgroundUri = AlarmMediaStore.checkedUri(context, input.backgroundUri, "background"),
         backgroundName = input.backgroundName?.take(120),
+        sleepSoundUri = AlarmMediaStore.checkedUri(context, input.sleepSoundUri, "sleep"),
+        sleepSoundName = input.sleepSoundName?.take(120),
+        sleepSoundMinutes = input.sleepSoundMinutes.coerceIn(1, 720),
       )
       AlarmController.save(context, alarm)
       alarm.toMap()
@@ -237,6 +252,15 @@ class KtAlarmModule : Module() {
       }
     }
 
+    Function("getSleepSoundState") { SleepSoundStore.state(context) }
+    AsyncFunction("startSleepSound") { input: SleepSoundInput ->
+      require(input.minutes in 1..720) { "Choose a duration between 1 and 720 minutes." }
+      val uri = requireNotNull(AlarmMediaStore.checkedUri(context, input.uri, "sleep"))
+      SleepSoundService.start(launcherContext,
+        SleepSelection(uri, input.name.take(120), input.minutes, input.alarmId))
+    }.runOnQueue(Queues.MAIN)
+    AsyncFunction("stopSleepSound") { SleepSoundService.stop(context) }.runOnQueue(Queues.MAIN)
+
     // endregion
 
     // region Uninstall protection
@@ -274,6 +298,12 @@ class KtAlarmModule : Module() {
     /** Squat and barcode missions use the camera. Resolves `{ granted }` (plus Expo's status fields). */
     AsyncFunction("requestCameraPermission") { promise: Promise ->
       Permissions.askForPermissionsWithPermissionsManager(appContext.permissions, promise, Manifest.permission.CAMERA)
+    }
+
+    AsyncFunction("requestActivityRecognitionPermission") { promise: Promise ->
+      if (Build.VERSION.SDK_INT >= 29) Permissions.askForPermissionsWithPermissionsManager(
+        appContext.permissions, promise, Manifest.permission.ACTIVITY_RECOGNITION)
+      else promise.resolve(mapOf("granted" to true))
     }
 
     Function("openExactAlarmSettings") { AlarmPermissions.openExactAlarmSettings(launcherContext) }

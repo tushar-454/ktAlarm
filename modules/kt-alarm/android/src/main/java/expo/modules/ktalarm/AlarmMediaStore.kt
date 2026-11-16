@@ -20,8 +20,12 @@ internal object AlarmMediaStore {
     context.createDeviceProtectedStorageContext().filesDir, "alarm_media",
   ).apply { mkdirs() }
 
-  fun checkedUri(context: Context, value: String?): String? {
+  fun checkedUri(context: Context, value: String?, kind: String = "ringtone"): String? {
     if (value.isNullOrBlank()) return null
+    if (value.startsWith("preset:")) {
+      require(PresetMedia.contains(value, kind)) { "Choose a valid built-in sound or background." }
+      return value
+    }
     val uri = Uri.parse(value)
     require(uri.scheme == "file") { "Choose media from your phone first." }
     val file = File(requireNotNull(uri.path)).canonicalFile
@@ -78,7 +82,8 @@ internal object AlarmMediaStore {
         check(source.renameTo(target)) { "Could not store the ringtone." }
       }
       // Replaced files and cancelled selections are collected later, without touching saved media.
-      val used = AlarmStore.all(context).flatMap { listOfNotNull(it.ringtoneUri, it.backgroundUri) }.toSet()
+      val used = (AlarmStore.all(context).flatMap { listOfNotNull(it.ringtoneUri, it.backgroundUri, it.sleepSoundUri) } +
+        listOfNotNull(SleepSoundStore.selection(context).uri, SleepSoundStore.current?.selection?.uri)).toSet()
       val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
       dir.listFiles()?.filter { it != target && it.lastModified() < cutoff && Uri.fromFile(it).toString() !in used }
         ?.forEach { it.delete() }

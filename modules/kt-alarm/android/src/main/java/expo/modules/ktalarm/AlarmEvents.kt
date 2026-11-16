@@ -9,7 +9,7 @@ object AlarmEvents {
     fun onEvent(type: Type, ringingAlarmId: String?)
   }
 
-  enum class Type { ALARMS_CHANGED, RINGING_CHANGED }
+  enum class Type { ALARMS_CHANGED, RINGING_CHANGED, SLEEP_SOUND_CHANGED }
 
   private val listeners = CopyOnWriteArraySet<Listener>()
 

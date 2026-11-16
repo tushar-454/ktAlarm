@@ -2,6 +2,23 @@
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
+## Native configuration and alarm audio
+
+This repository intentionally commits `android/` and `ios/`. EAS builds these native projects;
+it does not regenerate them from `app.json`. Native manifests, resources and Xcode settings are
+the source of truth for native behavior. When changing orientation, icons, schemes, appearance,
+platform identifiers or config plugins, update/check the corresponding native projects too.
+Do not delete or regenerate the native projects as a way to clear a Doctor warning.
+
+The Expo Doctor `appConfigFieldsNotSyncedCheck` is disabled for this intentional native-project
+workflow, as supported by Expo. All dependency, config-schema and other Doctor checks remain enabled.
+
+Android sleep sounds use a separate media foreground service, loop offline, and stop at the selected
+deadline or as soon as a wake-up alarm rings. They never modify alarm scheduling. The notification
+provides a Stop action. Durations are elapsed-time based and support 1–720 minutes.
+Built-in noise loops and ringtones are original synthesized PCM audio; regenerate them with
+`python3 scripts/generate-audio-presets.py`. No third-party recordings are bundled.
+
 ## Get started
 
 1. Install dependencies

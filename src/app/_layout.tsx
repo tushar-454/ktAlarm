@@ -7,6 +7,7 @@ export default function RootLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="alarm" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="sleep" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

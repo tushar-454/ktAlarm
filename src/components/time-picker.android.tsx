@@ -27,11 +27,11 @@ export function TimePicker({ hour, minute, onChange }: TimePickerProps) {
           onTimeChanged={({ nativeEvent }) => onChange(nativeEvent.hour, nativeEvent.minute)} />
       ) : (
         <Text className="py-10 text-center text-5xl text-neutral-900 dark:text-white">
-          {String(hour).padStart(2, '0')}:{String(minute).padStart(2, '0')}
+          {hour % 12 || 12}:{String(minute).padStart(2, '0')} {hour >= 12 ? 'PM' : 'AM'}
         </Text>
       )}
       <Text className="mt-2 text-center text-xs text-neutral-500 dark:text-neutral-400">
-        Hours · Minutes (24-hour) · Swipe to set
+        Hours · Minutes · Swipe to set, tap AM/PM
       </Text>
     </View>
   );

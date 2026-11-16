@@ -214,6 +214,7 @@ class AlarmService : Service() {
     }
 
     acquireWakeLock(silenceAfter + 60_000)
+    SleepSoundService.stop(this)
     startSound(alarm.ringtoneUri)
     if (alarm.vibrate) startVibration()
     launchRingingScreen(alarm)
@@ -434,7 +435,7 @@ class AlarmService : Service() {
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
       .build()
 
-    for (uri in (listOfNotNull(customUri?.let { Uri.parse(it) }) + alarmUris()).distinct()) {
+    for (uri in (listOfNotNull(customUri?.let { PresetMedia.audioUri(this, it) }) + alarmUris()).distinct()) {
       val p = MediaPlayer()
       try {
         p.setAudioAttributes(attrs)

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import KtAlarm, { type Alarm } from 'kt-alarm';
-import { Alert, FlatList, Pressable, Switch, Text, View } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PermissionCard } from '@/components/permission-card';
@@ -38,6 +38,13 @@ export default function AlarmsScreen() {
               </Text>
             </View>
             <PermissionCard status={status} />
+            {Platform.OS === 'android' && KtAlarm && (
+              <Pressable onPress={() => router.push('/sleep')} accessibilityRole="button"
+                className="mx-5 mb-5 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
+                <Text className="text-base font-semibold text-neutral-900 dark:text-white">🌙 Sleep sounds</Text>
+                <Text className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">White noise, rain and more · set a sleep timer</Text>
+              </Pressable>
+            )}
             {!KtAlarm && (
               <Text className="mx-6 mb-4 text-sm text-red-500">
                 Native alarm module not found. Run a development build: npx expo run:android
@@ -110,6 +117,12 @@ function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
             {alarm.locked ? '🔒' : missionInfo(mission.type).emoji} {describeMission(mission)}
             {(alarm.missions?.length ?? 0) > 1 ? ` + ${alarm.missions!.length - 1} more` : ''}
           </Text>
+        )}
+        {Platform.OS === 'android' && (
+          <Pressable onPress={() => router.push({ pathname: '/sleep', params: { id: alarm.id } })}
+            accessibilityRole="button" className="mt-2 self-start py-1">
+            <Text className="text-xs font-semibold text-[#FF8A3D]">🌙 Start sleep sounds</Text>
+          </Pressable>
         )}
         {snoozed ? (
           <Text className="mt-1 text-xs font-medium text-[#FF8A3D]">

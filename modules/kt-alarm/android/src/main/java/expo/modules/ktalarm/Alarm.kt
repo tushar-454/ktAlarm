@@ -30,6 +30,9 @@ data class Alarm(
   val ringtoneName: String? = null,
   val backgroundUri: String? = null,
   val backgroundName: String? = null,
+  val sleepSoundUri: String? = null,
+  val sleepSoundName: String? = null,
+  val sleepSoundMinutes: Int = 30,
 ) {
   val isRepeating: Boolean get() = days.isNotEmpty()
   val hasMission: Boolean get() = missions.isNotEmpty()
@@ -89,6 +92,9 @@ data class Alarm(
     put("ringtoneName", ringtoneName)
     put("backgroundUri", backgroundUri)
     put("backgroundName", backgroundName)
+    put("sleepSoundUri", sleepSoundUri)
+    put("sleepSoundName", sleepSoundName)
+    put("sleepSoundMinutes", sleepSoundMinutes)
   }
 
   /** Shape returned to JavaScript. */
@@ -111,6 +117,9 @@ data class Alarm(
     "ringtoneName" to ringtoneName,
     "backgroundUri" to backgroundUri,
     "backgroundName" to backgroundName,
+    "sleepSoundUri" to sleepSoundUri,
+    "sleepSoundName" to sleepSoundName,
+    "sleepSoundMinutes" to sleepSoundMinutes,
   )
 
   companion object {
@@ -136,6 +145,9 @@ data class Alarm(
         ringtoneName = o.optString("ringtoneName").takeIf { it.isNotBlank() },
         backgroundUri = o.optString("backgroundUri").takeIf { it.isNotBlank() },
         backgroundName = o.optString("backgroundName").takeIf { it.isNotBlank() },
+        sleepSoundUri = o.optString("sleepSoundUri").takeIf { it.isNotBlank() },
+        sleepSoundName = o.optString("sleepSoundName").takeIf { it.isNotBlank() },
+        sleepSoundMinutes = o.optInt("sleepSoundMinutes", 30).coerceIn(1, 720),
       )
     }
   }

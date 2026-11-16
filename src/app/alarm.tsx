@@ -6,8 +6,10 @@ import { Alert, Linking, Platform, Pressable, ScrollView, Switch, Text, TextInpu
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TimePicker } from '@/components/time-picker';
+import { SleepSoundControls } from '@/components/sleep-sound-controls';
 import { useNow } from '@/hooks/use-alarms';
 import { formatCountdown, previewNextTrigger, WEEK_ORDER, WEEKDAY_LETTER } from '@/lib/alarm-format';
+import { BACKGROUND_PRESETS, backgroundSource, RINGTONE_PRESETS, SLEEP_PRESETS } from '@/lib/media-presets';
 import {
   defaultMission,
   MATH_DIFFICULTIES,
@@ -45,6 +47,16 @@ async function ensureCamera(): Promise<boolean> {
   return false;
 }
 
+async function enableStepDetection() {
+  if (!KtAlarm) return;
+  const status = KtAlarm.getPermissionStatus();
+  if (status.stepDetector && !status.activityRecognition) {
+    const result = await KtAlarm.requestActivityRecognitionPermission();
+    if (!result.granted) Alert.alert('Step estimates enabled',
+      'Physical activity access gives more reliable step detection. Without it, walking uses a conservative accelerometer estimate. Keep the phone in your trouser pocket.');
+  }
+}
+
 export default function AlarmEditorScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -62,6 +74,9 @@ export default function AlarmEditorScreen() {
   const [background, setBackground] = useState<AlarmMedia | null>(existing?.backgroundUri
     ? { uri: existing.backgroundUri, name: existing.backgroundName || 'Custom background' } : null);
   const [pickingMedia, setPickingMedia] = useState(false);
+  const [sleepSound, setSleepSound] = useState<AlarmMedia>(existing?.sleepSoundUri
+    ? { uri: existing.sleepSoundUri, name: existing.sleepSoundName || 'Sleep sound' } : SLEEP_PRESETS[1]);
+  const [sleepMinutes, setSleepMinutes] = useState(existing?.sleepSoundMinutes ?? 30);
   const [maxSnoozes, setMaxSnoozes] = useState(existing?.maxSnoozes ?? -1);
   // Until the user picks a snooze limit themselves, follow the mission default.
   const [maxSnoozesTouched, setMaxSnoozesTouched] = useState(
@@ -84,6 +99,7 @@ export default function AlarmEditorScreen() {
     if (!maxSnoozesTouched) setMaxSnoozes(next.length ? MISSION_DEFAULT_MAX_SNOOZES : -1);
     // Barcode asks when registering a code; squat asks right away.
     if (type === 'squat' && next.some((m) => m.type === 'squat')) void ensureCamera();
+    if (type === 'walk' && next.some((m) => m.type === 'walk')) void enableStepDetection();
   };
 
   const pickMedia = async (kind: 'audio' | 'image') => {
@@ -135,6 +151,7 @@ export default function AlarmEditorScreen() {
           missions, maxSnoozes,
           ringtoneUri: ringtone?.uri ?? null, ringtoneName: ringtone?.name ?? null,
           backgroundUri: background?.uri ?? null, backgroundName: background?.name ?? null,
+          sleepSoundUri: sleepSound.uri, sleepSoundName: sleepSound.name, sleepSoundMinutes: sleepMinutes,
         } : {}),
       });
       router.back();
@@ -305,13 +322,31 @@ export default function AlarmEditorScreen() {
         {MISSIONS_SUPPORTED && (
           <>
             <Section title="Ringtone">
+              <View className="mb-3 flex-row flex-wrap gap-2">
+                <Chip label="System alarm" active={!ringtone} onPress={() => setRingtone(null)} />
+                {RINGTONE_PRESETS.map((preset) => (
+                  <Chip key={preset.uri} label={preset.name} active={ringtone?.uri === preset.uri}
+                    onPress={() => setRingtone(preset)} />
+                ))}
+              </View>
               <MediaChoice label={ringtone?.name ?? 'Default alarm sound'} selected={!!ringtone}
                 disabled={pickingMedia || locked} onPick={() => void pickMedia('audio')}
                 onClear={() => setRingtone(null)} />
             </Section>
             <Section title="Alarm background">
+              <View className="mb-3 flex-row flex-wrap gap-2">
+                <Chip label="Dark" active={!background} onPress={() => setBackground(null)} />
+                {BACKGROUND_PRESETS.map((preset) => (
+                  <Pressable key={preset.uri} onPress={() => setBackground(preset)} accessibilityRole="button"
+                    accessibilityLabel={`${preset.name} background`} accessibilityState={{ selected: background?.uri === preset.uri }}
+                    style={{ borderWidth: 2, borderColor: background?.uri === preset.uri ? ACCENT : 'transparent', borderRadius: 14, overflow: 'hidden' }}>
+                    <Image source={backgroundSource(preset.uri)} style={{ width: 64, height: 56 }} />
+                    <Text className="py-1 text-center text-xs text-neutral-700 dark:text-neutral-300">{preset.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
               {background && (
-                <Image source={{ uri: background.uri }} contentFit="cover"
+                <Image source={backgroundSource(background.uri)} contentFit="cover"
                   style={{ width: '100%', height: 180, borderRadius: 16, marginBottom: 12 }}
                   accessibilityLabel="Selected alarm background" />
               )}
@@ -321,6 +356,14 @@ export default function AlarmEditorScreen() {
               <Text className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                 Choose a photo or audio file from your phone. Access is granted only to the file you select.
               </Text>
+            </Section>
+            <Section title="Sleep sounds">
+              {!existing && <Text className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
+                Save this alarm to schedule your wake-up time. Sleep sounds can start now.
+              </Text>}
+              <SleepSoundControls sound={sleepSound} minutes={sleepMinutes} onSoundChange={setSleepSound}
+                onMinutesChange={setSleepMinutes} alarmId={existing?.id} disabled={locked || saving}
+                onBusyChange={setPickingMedia} />
             </Section>
           </>
         )}
@@ -382,10 +425,16 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
   return (
     <View className="mt-3 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
       {mission.type === 'walk' && (
-        <Text className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
-          Carry your phone in your hand or pocket and walk at a steady pace. The accelerometer
-          estimates your steps while the mission is open; no location access is needed.
-        </Text>
+        <View className="mb-4">
+          <Text className="text-sm text-neutral-600 dark:text-neutral-400">
+          Keep your phone in your trouser pocket and walk naturally. Physical activity access uses
+          Android&apos;s step detector; otherwise, a stricter motion estimate counts full strides.
+          The first few strides warm up the estimate. No location access is needed.
+          </Text>
+          <Pressable onPress={() => void enableStepDetection()} accessibilityRole="button" className="mt-2 py-2">
+            <Text className="text-sm font-semibold text-[#FF8A3D]">Enable Android step detection</Text>
+          </Pressable>
+        </View>
       )}
       {mission.type === 'squat' && (
         <Text className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
@@ -493,6 +542,7 @@ function PreviewButton({ mission }: { mission: Mission }) {
     <Pressable
       onPress={async () => {
         if (usesCamera(mission.type) && !(await ensureCamera())) return;
+        if (mission.type === 'walk') await enableStepDetection();
         KtAlarm?.previewMission(mission);
       }}
       accessibilityRole="button"

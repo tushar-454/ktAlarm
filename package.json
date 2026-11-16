@@ -45,5 +45,12 @@
     "web": "expo start --web",
     "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      }
+    }
+  }
 }

@@ -359,6 +359,11 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     backgroundView.setImageDrawable(null)
     backgroundShade.visibility = View.GONE
     if (uri == null) return
+    PresetMedia.background(uri)?.let {
+      backgroundView.setImageDrawable(it)
+      backgroundShade.visibility = View.VISIBLE
+      return
+    }
     AlarmMediaStore.io.execute {
       // Imports are already resized to at most 1600px; decoding never blocks the ringing UI.
       val bitmap = runCatching { BitmapFactory.decodeFile(android.net.Uri.parse(uri).path) }.getOrNull()

@@ -23,6 +23,17 @@ export type Mission = {
 
 export type ScannedCode = { value: string; format: string };
 export type AlarmMedia = { uri: string; name: string };
+export type SleepSoundState = {
+  playing: boolean;
+  preparing: boolean;
+  uri: string;
+  name: string;
+  minutes: number;
+  alarmId: string | null;
+  endsAt: number | null;
+  error: string | null;
+};
+export type SleepSoundInput = AlarmMedia & { minutes: number; alarmId?: string };
 
 /** `maxSnoozes` value meaning "no limit". */
 export const UNLIMITED_SNOOZES = -1;
@@ -50,6 +61,9 @@ export type Alarm = {
   ringtoneName?: string | null;
   backgroundUri?: string | null;
   backgroundName?: string | null;
+  sleepSoundUri?: string | null;
+  sleepSoundName?: string | null;
+  sleepSoundMinutes?: number;
   /** Snoozes allowed per ring, or `UNLIMITED_SNOOZES`. */
   maxSnoozes?: number;
   /** Snoozes used for the current ring. */
@@ -75,6 +89,9 @@ export type AlarmInput = {
   ringtoneName?: string | null;
   backgroundUri?: string | null;
   backgroundName?: string | null;
+  sleepSoundUri?: string | null;
+  sleepSoundName?: string | null;
+  sleepSoundMinutes?: number;
   maxSnoozes?: number;
 };
 
@@ -91,11 +108,14 @@ export type PermissionStatus = {
   overlay: boolean;
   /** Camera, for the squat and barcode missions. Android only (missing on iOS). */
   camera?: boolean;
+  activityRecognition?: boolean;
+  stepDetector?: boolean;
 };
 
 type KtAlarmEvents = {
   onAlarmsChanged: () => void;
   onRingingChanged: (event: { alarmId: string | null }) => void;
+  onSleepSoundChanged: (event: SleepSoundState) => void;
 };
 
 declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
@@ -116,6 +136,9 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   scanBarcode(): Promise<ScannedCode | null>;
   /** Android system picker grants access only to the selected file; imports a durable copy. */
   pickAlarmMedia(kind: 'audio' | 'image'): Promise<AlarmMedia | null>;
+  getSleepSoundState(): SleepSoundState;
+  startSleepSound(input: SleepSoundInput): Promise<void>;
+  stopSleepSound(): Promise<void>;
 
   /** Device-admin uninstall protection. Android only. */
   isUninstallProtectionEnabled(): boolean;
@@ -129,6 +152,7 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
   requestNotificationPermission(): Promise<{ granted: boolean }>;
   /** Camera, for the squat and barcode missions. Android only. */
   requestCameraPermission(): Promise<{ granted: boolean; canAskAgain?: boolean }>;
+  requestActivityRecognitionPermission(): Promise<{ granted: boolean }>;
   openExactAlarmSettings(): void;
   openFullScreenIntentSettings(): void;
   requestIgnoreBatteryOptimizations(): void;

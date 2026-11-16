@@ -26,6 +26,8 @@ object AlarmPermissions {
     "batteryOptimizationIgnored" to isIgnoringBatteryOptimizations(context),
     "overlay" to hasOverlay(context),
     "camera" to CameraView.hasCameraPermission(context),
+    "activityRecognition" to WalkMission.hasPermission(context),
+    "stepDetector" to WalkMission.hasDetector(context),
   )
 
   fun hasNotifications(context: Context): Boolean {
