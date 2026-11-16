@@ -1,6 +1,6 @@
 import KtAlarm, { type AlarmMedia } from 'kt-alarm';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { useNow } from '@/hooks/use-alarms';
 import { SLEEP_SUPPORTED, useSleepSound } from '@/hooks/use-sleep-sound';
@@ -46,23 +46,27 @@ export function SleepSoundControls({ sound, minutes, onSoundChange, onMinutesCha
       <Text className="mb-3 text-sm text-neutral-600 dark:text-neutral-400">
         Relax before sleep. Sounds loop in the background until the timer ends. Your wake-up alarm takes priority.
       </Text>
-      <View className="flex-row flex-wrap gap-2">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}
+        contentContainerStyle={{ alignItems: 'center', gap: 8 }}>
         {SLEEP_PRESETS.map((preset) => (
           <Choice key={preset.uri} label={preset.name} active={sound.uri === preset.uri}
             disabled={unavailable} onPress={() => onSoundChange(preset)} />
         ))}
-      </View>
+      </ScrollView>
       <Pressable onPress={chooseFile} disabled={unavailable} accessibilityRole="button" className="mt-3 py-2">
         <Text className="font-semibold text-[#FF8A3D]">{busy ? 'Please wait…' : 'Choose audio from phone'}</Text>
       </Pressable>
       <Text className="mt-1 text-sm text-neutral-900 dark:text-white" numberOfLines={1}>{sound.name}</Text>
       <Text className="mb-2 mt-5 text-sm font-medium text-neutral-700 dark:text-neutral-300">Sleep timer</Text>
-      <View className="flex-row flex-wrap gap-2">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}
+        contentContainerStyle={{ alignItems: 'center', gap: 8 }}>
         {[15, 30, 45, 60, 90, 120].map((n) => (
           <Choice key={n} label={`${n} min`} active={minutes === n} disabled={unavailable}
             onPress={() => { setDuration(String(n)); onMinutesChange(n); }} />
         ))}
-      </View>
+      </ScrollView>
       <View className="mt-3 flex-row items-center gap-3">
         <TextInput value={duration} keyboardType="number-pad" maxLength={3} editable={!unavailable}
           accessibilityLabel="Sleep sound duration in minutes" selectTextOnFocus
@@ -104,8 +108,8 @@ function Choice({ label, active, disabled, onPress }: {
   return (
     <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button"
       accessibilityState={{ selected: active, disabled }}
-      className={`rounded-full border px-3 py-2 ${active ? 'border-[#FF8A3D] bg-[#FF8A3D]' : 'border-neutral-300 dark:border-neutral-600'}`}>
-      <Text className={`text-sm ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>{label}</Text>
+      className={`shrink-0 rounded-full border px-3 py-2 ${active ? 'border-[#FF8A3D] bg-[#FF8A3D]' : 'border-neutral-300 dark:border-neutral-600'}`}>
+      <Text numberOfLines={1} className={`text-sm ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>{label}</Text>
     </Pressable>
   );
 }

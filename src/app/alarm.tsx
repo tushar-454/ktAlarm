@@ -334,13 +334,15 @@ export default function AlarmEditorScreen() {
                   Imported audio uses its first 29 seconds as the system alarm sound.
                 </Text>
               )}
-              <View className="mb-3 flex-row flex-wrap gap-2">
-                <Chip label="System alarm" active={!ringtone} onPress={() => setRingtone(null)} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled" className="mb-3" style={{ flexGrow: 0 }}
+                contentContainerStyle={{ alignItems: 'center', gap: 8 }}>
+                <Chip compact label="System alarm" active={!ringtone} onPress={() => setRingtone(null)} />
                 {RINGTONE_PRESETS.map((preset) => (
-                  <Chip key={preset.uri} label={preset.name} active={ringtone?.uri === preset.uri}
+                  <Chip compact key={preset.uri} label={preset.name} active={ringtone?.uri === preset.uri}
                     onPress={() => setRingtone(preset)} />
                 ))}
-              </View>
+              </ScrollView>
               <MediaChoice label={ringtone?.name ?? 'Default alarm sound'} selected={!!ringtone}
                 disabled={pickingMedia || locked} onPick={() => void pickMedia('audio')}
                 onClear={() => setRingtone(null)} />
@@ -620,15 +622,17 @@ function MediaChoice({ label, selected, disabled, onPick, onClear }: {
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function Chip({ label, active, onPress, compact = false }: {
+  label: string; active: boolean; onPress: () => void; compact?: boolean;
+}) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
-      className={`rounded-full px-4 py-2 ${active ? '' : 'bg-neutral-100 dark:bg-[#1A1F27]'}`}
+      className={`shrink-0 rounded-full py-2 ${compact ? 'px-3' : 'px-4'} ${active ? '' : 'bg-neutral-100 dark:bg-[#1A1F27]'}`}
       style={active ? { backgroundColor: ACCENT } : undefined}>
-      <Text className={`text-sm font-medium ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
+      <Text numberOfLines={1} className={`text-sm font-medium ${active ? 'text-white' : 'text-neutral-700 dark:text-neutral-300'}`}>
         {label}
       </Text>
     </Pressable>
