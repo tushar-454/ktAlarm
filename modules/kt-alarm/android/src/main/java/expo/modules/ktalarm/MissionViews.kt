@@ -70,6 +70,8 @@ internal abstract class MissionRunner(protected val context: Context, protected 
       // Never leave the user with an impossible mission: no sensor / camera → math instead.
       MissionType.SHAKE ->
         if (ShakeMission.isSupported(context)) ShakeMission(context, mission, host) else fallback(context, host)
+      MissionType.WALK ->
+        if (ShakeMission.isSupported(context)) WalkMission(context, mission, host) else fallback(context, host)
       MissionType.SQUAT ->
         if (CameraView.isAvailable(context)) SquatMission(context, mission, host) else fallback(context, host)
       MissionType.BARCODE ->

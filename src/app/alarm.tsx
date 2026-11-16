@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import KtAlarm, { errorCode, type Mission, type MissionType, type Weekday } from 'kt-alarm';
+import KtAlarm, { errorCode, type AlarmMedia, type Mission, type MissionType, type Weekday } from 'kt-alarm';
+import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,7 +56,12 @@ export default function AlarmEditorScreen() {
   const [label, setLabel] = useState(existing?.label ?? '');
   const [snoozeMinutes, setSnoozeMinutes] = useState(existing?.snoozeMinutes ?? 5);
   const [vibrate, setVibrate] = useState(existing?.vibrate ?? true);
-  const [mission, setMission] = useState<Mission | null>(existing?.missions?.[0] ?? null);
+  const [missions, setMissions] = useState<Mission[]>(existing?.missions ?? []);
+  const [ringtone, setRingtone] = useState<AlarmMedia | null>(existing?.ringtoneUri
+    ? { uri: existing.ringtoneUri, name: existing.ringtoneName || 'Custom ringtone' } : null);
+  const [background, setBackground] = useState<AlarmMedia | null>(existing?.backgroundUri
+    ? { uri: existing.backgroundUri, name: existing.backgroundName || 'Custom background' } : null);
+  const [pickingMedia, setPickingMedia] = useState(false);
   const [maxSnoozes, setMaxSnoozes] = useState(existing?.maxSnoozes ?? -1);
   // Until the user picks a snooze limit themselves, follow the mission default.
   const [maxSnoozesTouched, setMaxSnoozesTouched] = useState(
@@ -69,20 +75,38 @@ export default function AlarmEditorScreen() {
     setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
 
   const pickMission = (type: MissionType | null) => {
-    setMission(type ? (mission?.type === type ? mission : defaultMission(type)) : null);
-    if (!maxSnoozesTouched) setMaxSnoozes(type ? MISSION_DEFAULT_MAX_SNOOZES : -1);
+    const next = type
+      ? missions.some((m) => m.type === type)
+        ? missions.filter((m) => m.type !== type)
+        : [...missions, defaultMission(type)]
+      : [];
+    setMissions(next);
+    if (!maxSnoozesTouched) setMaxSnoozes(next.length ? MISSION_DEFAULT_MAX_SNOOZES : -1);
     // Barcode asks when registering a code; squat asks right away.
-    if (type === 'squat') void ensureCamera();
+    if (type === 'squat' && next.some((m) => m.type === 'squat')) void ensureCamera();
+  };
+
+  const pickMedia = async (kind: 'audio' | 'image') => {
+    if (!KtAlarm || pickingMedia) return;
+    setPickingMedia(true);
+    try {
+      const media = await KtAlarm.pickAlarmMedia(kind);
+      if (media) (kind === 'audio' ? setRingtone : setBackground)(media);
+    } catch (e) {
+      Alert.alert('Could not import file', e instanceof Error ? e.message : String(e));
+    } finally {
+      setPickingMedia(false);
+    }
   };
 
   const save = async () => {
     if (!KtAlarm) return;
-    if (mission?.type === 'barcode' && !mission.barcodeValue) {
+    if (missions.some((m) => m.type === 'barcode' && !m.barcodeValue)) {
       Alert.alert('Register a code first', 'Tap "Register code" and scan the barcode you want to use.');
       return;
     }
-    if (mission && usesCamera(mission.type) && !(await ensureCamera())) return;
-    if (mission && !KtAlarm.getPermissionStatus().overlay) {
+    if (missions.some((m) => usesCamera(m.type)) && !(await ensureCamera())) return;
+    if (missions.length > 0 && !KtAlarm.getPermissionStatus().overlay) {
       Alert.alert(
         'One more permission',
         'Mission alarms need "Display over other apps" so the mission screen comes back if you press Home. Allow it, then tap Save again.',
@@ -107,7 +131,11 @@ export default function AlarmEditorScreen() {
         snoozeMinutes,
         vibrate,
         enabled: true,
-        ...(MISSIONS_SUPPORTED ? { missions: mission ? [mission] : [], maxSnoozes } : {}),
+        ...(MISSIONS_SUPPORTED ? {
+          missions, maxSnoozes,
+          ringtoneUri: ringtone?.uri ?? null, ringtoneName: ringtone?.name ?? null,
+          backgroundUri: background?.uri ?? null, backgroundName: background?.name ?? null,
+        } : {}),
       });
       router.back();
     } catch (e) {
@@ -159,11 +187,11 @@ export default function AlarmEditorScreen() {
         </Text>
         <Pressable
           onPress={save}
-          disabled={saving || locked}
+          disabled={saving || locked || pickingMedia}
           hitSlop={8}
           accessibilityRole="button"
           className="min-w-[88px] items-center rounded-full px-5 py-2.5 active:opacity-60"
-          style={{ backgroundColor: ACCENT, opacity: saving || locked ? 0.5 : 1 }}>
+          style={{ backgroundColor: ACCENT, opacity: saving || locked || pickingMedia ? 0.5 : 1 }}>
           <Text className="text-base font-semibold text-white">{saving ? 'Saving…' : 'Save'}</Text>
         </Pressable>
       </View>
@@ -238,26 +266,63 @@ export default function AlarmEditorScreen() {
 
         {/* Mission */}
         {MISSIONS_SUPPORTED && (
-          <Section title="Wake-up mission">
+          <Section title="Wake-up missions">
             <View className="flex-row flex-wrap gap-2">
-              <Chip label="None" active={!mission} onPress={() => pickMission(null)} />
+              <Chip label="None" active={missions.length === 0} onPress={() => pickMission(null)} />
               {MISSIONS.map((m) => (
                 <Chip
                   key={m.type}
                   label={`${m.emoji} ${m.title}`}
-                  active={mission?.type === m.type}
+                  active={missions.some((mission) => mission.type === m.type)}
                   onPress={() => pickMission(m.type)}
                 />
               ))}
             </View>
-            {mission ? (
-              <MissionSettings mission={mission} onChange={setMission} />
+            {missions.length > 0 ? (
+              <>
+                <Text className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
+                  Complete every mission in order to dismiss. Tap a selected mission to remove it.
+                </Text>
+                {missions.map((mission, index) => (
+                  <View key={mission.type}>
+                    <Text className="mt-4 text-sm font-semibold text-neutral-900 dark:text-white">
+                      {index + 1}. {missionInfo(mission.type).title}
+                    </Text>
+                    <MissionSettings mission={mission} onChange={(updated) =>
+                      setMissions((current) => current.map((m) => m.type === updated.type ? updated : m))
+                    } />
+                  </View>
+                ))}
+              </>
             ) : (
               <Text className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
                 Add a mission and the alarm won&apos;t stop until you complete it.
               </Text>
             )}
           </Section>
+        )}
+
+        {MISSIONS_SUPPORTED && (
+          <>
+            <Section title="Ringtone">
+              <MediaChoice label={ringtone?.name ?? 'Default alarm sound'} selected={!!ringtone}
+                disabled={pickingMedia || locked} onPick={() => void pickMedia('audio')}
+                onClear={() => setRingtone(null)} />
+            </Section>
+            <Section title="Alarm background">
+              {background && (
+                <Image source={{ uri: background.uri }} contentFit="cover"
+                  style={{ width: '100%', height: 180, borderRadius: 16, marginBottom: 12 }}
+                  accessibilityLabel="Selected alarm background" />
+              )}
+              <MediaChoice label={background?.name ?? 'Default dark background'} selected={!!background}
+                disabled={pickingMedia || locked} onPick={() => void pickMedia('image')}
+                onClear={() => setBackground(null)} />
+              <Text className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+                Choose a photo or audio file from your phone. Access is granted only to the file you select.
+              </Text>
+            </Section>
+          </>
         )}
 
         {/* Snooze */}
@@ -316,6 +381,12 @@ function MissionSettings({ mission, onChange }: { mission: Mission; onChange: (m
 
   return (
     <View className="mt-3 rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
+      {mission.type === 'walk' && (
+        <Text className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
+          Carry your phone in your hand or pocket and walk at a steady pace. The accelerometer
+          estimates your steps while the mission is open; no location access is needed.
+        </Text>
+      )}
       {mission.type === 'squat' && (
         <Text className="mb-4 text-sm text-neutral-600 dark:text-neutral-400">
           The front camera counts your squats. Stand your phone up against something, step back about 2 m (6
@@ -454,6 +525,26 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </Text>
       {children}
+    </View>
+  );
+}
+
+function MediaChoice({ label, selected, disabled, onPick, onClear }: {
+  label: string; selected: boolean; disabled: boolean; onPick: () => void; onClear: () => void;
+}) {
+  return (
+    <View className="rounded-2xl bg-neutral-100 p-4 dark:bg-[#1A1F27]">
+      <Text className="mb-3 text-sm text-neutral-900 dark:text-white" numberOfLines={1}>{label}</Text>
+      <View className="flex-row gap-3" style={{ opacity: disabled ? 0.5 : 1 }}>
+        <Pressable onPress={onPick} disabled={disabled} accessibilityRole="button">
+          <Text className="py-2 font-semibold text-[#FF8A3D]">Choose from phone</Text>
+        </Pressable>
+        {selected && (
+          <Pressable onPress={onClear} disabled={disabled} accessibilityRole="button">
+            <Text className="py-2 text-neutral-500 dark:text-neutral-400">Use default</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }

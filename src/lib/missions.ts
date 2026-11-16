@@ -34,6 +34,16 @@ export const MISSIONS: MissionInfo[] = [
     unit: (n) => (n === 1 ? 'shake' : 'shakes'),
   },
   {
+    type: 'walk',
+    title: 'Walk',
+    emoji: '🚶',
+    min: 10,
+    max: 300,
+    step: 10,
+    defaultCount: 30,
+    unit: (n) => (n === 1 ? 'step' : 'steps'),
+  },
+  {
     type: 'squat',
     title: 'Squat',
     emoji: '🏋️',

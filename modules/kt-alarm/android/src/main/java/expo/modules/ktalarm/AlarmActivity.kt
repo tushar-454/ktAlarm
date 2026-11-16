@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.TextClock
 import android.widget.TextView
 import android.widget.Toast
@@ -74,6 +76,12 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   private var runner: MissionRunner? = null
   /** The camera failed during this ring: go straight to the fallback mission next time. */
   private var cameraFailed = false
+  private var walkFailed = false
+  private var missionIndex = 0
+  private val currentMission: Mission? get() = alarm?.missions?.getOrNull(missionIndex)
+  private lateinit var backgroundView: ImageView
+  private lateinit var backgroundShade: View
+  private var loadedBackground: String? = null
 
   private lateinit var ringingView: View
   private lateinit var labelView: TextView
@@ -128,6 +136,17 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     setContentView(buildLayout())
     AlarmEvents.add(listener)
     handle(intent)
+    if (!isPreview && savedInstanceState != null && savedInstanceState.getString("missionAlarmId") == alarmId) {
+      missionIndex = savedInstanceState.getInt("missionIndex", 0)
+        .coerceIn(0, ((alarm?.missions?.size ?: 1) - 1).coerceAtLeast(0))
+      refreshRinging()
+    }
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    outState.putString("missionAlarmId", alarmId)
+    outState.putInt("missionIndex", missionIndex)
+    super.onSaveInstanceState(outState)
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -200,6 +219,7 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       alarmId = null
       alarm = null
       previewMission = preview
+      loadBackground(null)
       startMission(preview)
       return
     }
@@ -213,10 +233,15 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       return
     }
     val keepMission = id == alarmId && runner != null && !isPreview
-    if (id != alarmId) cameraFailed = false
+    if (id != alarmId) {
+      cameraFailed = false
+      walkFailed = false
+      missionIndex = 0
+    }
     previewMission = null
     alarmId = id
     alarm = AlarmStore.get(this, id)
+    loadBackground(alarm?.backgroundUri)
     if (keepMission) refreshRinging() else showRinging()
   }
 
@@ -230,10 +255,14 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   private fun refreshRinging() {
     val a = alarm
     labelView.text = a?.label?.takeIf { it.isNotBlank() } ?: "Alarm"
-    val mission = a?.mission
-    missionHintView.text = mission?.describe().orEmpty()
+    val mission = currentMission
+    missionHintView.text = mission?.let {
+      if ((a?.missions?.size ?: 0) > 1) "${missionIndex + 1}/${a?.missions?.size} · ${it.describe()}" else it.describe()
+    }.orEmpty()
     missionHintView.visibility = if (mission != null) View.VISIBLE else View.GONE
-    primaryButton.text = if (mission != null) "Start mission" else "Dismiss"
+    primaryButton.text = if (mission != null) {
+      if (missionIndex > 0) "Continue missions" else "Start mission${if ((a?.missions?.size ?: 0) > 1) "s" else ""}"
+    } else "Dismiss"
 
     snoozeButton.visibility = if (a == null || a.canSnooze) View.VISIBLE else View.GONE
     val left = a?.snoozesLeft
@@ -244,7 +273,8 @@ class AlarmActivity : Activity(), MissionRunner.Host {
     stopMission()
     val r = MissionRunner.create(this, mission, this)
     runner = r
-    missionTitleView.text = r.title.uppercase()
+    missionTitleView.text = r.title.uppercase() +
+      if (!isPreview && (alarm?.missions?.size ?: 0) > 1) " · ${missionIndex + 1}/${alarm?.missions?.size}" else ""
     missionNoteView.text = if (isPreview) {
       "Preview — no alarm is ringing"
     } else {
@@ -277,8 +307,9 @@ class AlarmActivity : Activity(), MissionRunner.Host {
   override fun onMissionUnavailable() {
     handler.post {
       if (runner == null) return@post
-      cameraFailed = true
-      Toast.makeText(this, "Camera unavailable — solve these instead", Toast.LENGTH_LONG).show()
+      val walking = (previewMission ?: currentMission)?.type == MissionType.WALK
+      if (walking) walkFailed = true else cameraFailed = true
+      Toast.makeText(this, "${if (walking) "Motion sensor" else "Camera"} unavailable — solve these instead", Toast.LENGTH_LONG).show()
       startMission(MissionRunner.FALLBACK)
     }
   }
@@ -291,23 +322,54 @@ class AlarmActivity : Activity(), MissionRunner.Host {
       return
     }
     val id = alarmId ?: return
-    runner?.stop()
-    runner = null
+    if (runner == null) return
+    stopMission()
+    if (missionIndex + 1 < (alarm?.missions?.size ?: 0)) {
+      missionIndex++
+      startCurrentMission()
+      return
+    }
     AlarmController.completeMission(this, id)
     finishAndRemoveTask()
   }
 
   private fun onPrimary() {
-    val mission = alarm?.mission
+    val mission = currentMission
     if (mission != null) {
-      val usesCamera = mission.type == MissionType.SQUAT || mission.type == MissionType.BARCODE
-      startMission(if (cameraFailed && usesCamera) MissionRunner.FALLBACK else mission)
+      startCurrentMission()
       return
     }
     val id = alarmId ?: return
     if (AlarmController.dismiss(this, id)) {
       // Leaves the user on the lock screen — no forced unlock just to dismiss.
       finishAndRemoveTask()
+    }
+  }
+
+  private fun startCurrentMission() {
+    val mission = currentMission ?: return
+    val usesCamera = mission.type == MissionType.SQUAT || mission.type == MissionType.BARCODE
+    val unavailable = (cameraFailed && usesCamera) || (walkFailed && mission.type == MissionType.WALK)
+    startMission(if (unavailable) MissionRunner.FALLBACK else mission)
+  }
+
+  private fun loadBackground(uri: String?) {
+    if (loadedBackground == uri) return
+    loadedBackground = uri
+    backgroundView.setImageDrawable(null)
+    backgroundShade.visibility = View.GONE
+    if (uri == null) return
+    AlarmMediaStore.io.execute {
+      // Imports are already resized to at most 1600px; decoding never blocks the ringing UI.
+      val bitmap = runCatching { BitmapFactory.decodeFile(android.net.Uri.parse(uri).path) }.getOrNull()
+      runOnUiThread {
+        if (isDestroyed || isFinishing || loadedBackground != uri) {
+          bitmap?.recycle()
+        } else if (bitmap != null) {
+          backgroundView.setImageBitmap(bitmap)
+          backgroundShade.visibility = View.VISIBLE
+        }
+      }
     }
   }
 
@@ -360,6 +422,16 @@ class AlarmActivity : Activity(), MissionRunner.Host {
 
   private fun buildLayout(): View {
     val root = FrameLayout(this).apply { setBackgroundColor(Ui.BG) }
+    backgroundView = ImageView(this).apply {
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    backgroundShade = View(this).apply {
+      setBackgroundColor(Color.argb(175, 0, 0, 0))
+      visibility = View.GONE
+    }
+    root.addView(backgroundView, FrameLayout.LayoutParams(-1, -1))
+    root.addView(backgroundShade, FrameLayout.LayoutParams(-1, -1))
     ringingView = buildRingingView()
     missionView = buildMissionView().apply { visibility = View.GONE }
     root.addView(ringingView, FrameLayout.LayoutParams(-1, -1))

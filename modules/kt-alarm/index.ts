@@ -3,7 +3,7 @@ import { NativeModule, requireOptionalNativeModule } from 'expo';
 /** 0 = Sunday … 6 = Saturday */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type MissionType = 'math' | 'shake' | 'squat' | 'typing' | 'barcode';
+export type MissionType = 'math' | 'shake' | 'walk' | 'squat' | 'typing' | 'barcode';
 
 /** Math difficulty: 0 = easy … 3 = very hard. */
 export type MathDifficulty = 0 | 1 | 2 | 3;
@@ -22,6 +22,7 @@ export type Mission = {
 };
 
 export type ScannedCode = { value: string; format: string };
+export type AlarmMedia = { uri: string; name: string };
 
 /** `maxSnoozes` value meaning "no limit". */
 export const UNLIMITED_SNOOZES = -1;
@@ -41,10 +42,14 @@ export type Alarm = {
   /** Epoch ms of the next ring, null when disabled. */
   nextTriggerAt: number | null;
   /**
-   * Missions required to dismiss (at most one for now). Android only for now — iOS
+   * Missions required to dismiss, completed in order. Android only for now — iOS
    * returns no field, so read it as `alarm.missions ?? []`.
    */
   missions?: Mission[];
+  ringtoneUri?: string | null;
+  ringtoneName?: string | null;
+  backgroundUri?: string | null;
+  backgroundName?: string | null;
   /** Snoozes allowed per ring, or `UNLIMITED_SNOOZES`. */
   maxSnoozes?: number;
   /** Snoozes used for the current ring. */
@@ -66,6 +71,10 @@ export type AlarmInput = {
   vibrate?: boolean;
   snoozeMinutes?: number;
   missions?: Mission[];
+  ringtoneUri?: string | null;
+  ringtoneName?: string | null;
+  backgroundUri?: string | null;
+  backgroundName?: string | null;
   maxSnoozes?: number;
 };
 
@@ -105,6 +114,8 @@ declare class KtAlarmNativeModule extends NativeModule<KtAlarmEvents> {
    * cancelled; rejects with `ERR_CAMERA_PERMISSION` if the camera is denied. Android only.
    */
   scanBarcode(): Promise<ScannedCode | null>;
+  /** Android system picker grants access only to the selected file; imports a durable copy. */
+  pickAlarmMedia(kind: 'audio' | 'image'): Promise<AlarmMedia | null>;
 
   /** Device-admin uninstall protection. Android only. */
   isUninstallProtectionEnabled(): boolean;

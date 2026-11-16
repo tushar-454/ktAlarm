@@ -11,6 +11,7 @@ enum class MissionType(
 ) {
   MATH("math", 1, 10, 3),
   SHAKE("shake", 10, 100, 30),
+  WALK("walk", 10, 300, 30),
   SQUAT("squat", 5, 50, 10),
   TYPING("typing", 1, 5, 2),
   /** Scan one registered code; count is always 1. */
@@ -43,6 +44,7 @@ data class Mission(
   fun describe(): String = when (type) {
     MissionType.MATH -> if (count == 1) "Solve a math problem" else "Solve $count math problems"
     MissionType.SHAKE -> "Shake your phone $count times"
+    MissionType.WALK -> "Walk $count steps with your phone"
     MissionType.SQUAT -> "Do $count squats"
     MissionType.TYPING -> if (count == 1) "Type a phrase" else "Type $count phrases"
     MissionType.BARCODE -> "Scan ${barcodeName?.takeIf { it.isNotBlank() } ?: "your code"}"

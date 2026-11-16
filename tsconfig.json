@@ -14,6 +14,7 @@
       ]
     }
   },
+  "exclude": ["example", "node_modules"],
   "include": [
     "**/*.ts",
     "**/*.tsx",

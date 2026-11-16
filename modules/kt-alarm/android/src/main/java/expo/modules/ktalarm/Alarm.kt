@@ -9,7 +9,7 @@ import java.util.Calendar
  *
  * @param days repeat days, 0 = Sunday … 6 = Saturday. Empty = rings once.
  * @param snoozeUntil epoch millis of a pending snooze, or null.
- * @param missions tasks required to dismiss the alarm. v1 uses at most one; a list keeps chains open.
+ * @param missions tasks required to dismiss the alarm, completed in order.
  * @param maxSnoozes snoozes allowed per occurrence, or [UNLIMITED_SNOOZES].
  * @param snoozeCount snoozes already used for the current occurrence.
  */
@@ -26,6 +26,10 @@ data class Alarm(
   val missions: List<Mission> = emptyList(),
   val maxSnoozes: Int = UNLIMITED_SNOOZES,
   val snoozeCount: Int = 0,
+  val ringtoneUri: String? = null,
+  val ringtoneName: String? = null,
+  val backgroundUri: String? = null,
+  val backgroundName: String? = null,
 ) {
   val isRepeating: Boolean get() = days.isNotEmpty()
   val hasMission: Boolean get() = missions.isNotEmpty()
@@ -81,6 +85,10 @@ data class Alarm(
     put("missions", JSONArray().apply { missions.forEach { put(it.toJson()) } })
     put("maxSnoozes", maxSnoozes)
     put("snoozeCount", snoozeCount)
+    put("ringtoneUri", ringtoneUri)
+    put("ringtoneName", ringtoneName)
+    put("backgroundUri", backgroundUri)
+    put("backgroundName", backgroundName)
   }
 
   /** Shape returned to JavaScript. */
@@ -99,6 +107,10 @@ data class Alarm(
     "maxSnoozes" to maxSnoozes,
     "snoozeCount" to snoozeCount,
     "locked" to isLocked(),
+    "ringtoneUri" to ringtoneUri,
+    "ringtoneName" to ringtoneName,
+    "backgroundUri" to backgroundUri,
+    "backgroundName" to backgroundName,
   )
 
   companion object {
@@ -120,6 +132,10 @@ data class Alarm(
         missions = (0 until missionsJson.length()).mapNotNull { Mission.fromJson(missionsJson.getJSONObject(it)) },
         maxSnoozes = o.optInt("maxSnoozes", UNLIMITED_SNOOZES),
         snoozeCount = o.optInt("snoozeCount", 0),
+        ringtoneUri = o.optString("ringtoneUri").takeIf { it.isNotBlank() },
+        ringtoneName = o.optString("ringtoneName").takeIf { it.isNotBlank() },
+        backgroundUri = o.optString("backgroundUri").takeIf { it.isNotBlank() },
+        backgroundName = o.optString("backgroundName").takeIf { it.isNotBlank() },
       )
     }
   }

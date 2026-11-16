@@ -3,6 +3,7 @@ package expo.modules.ktalarm
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -38,6 +39,10 @@ data class AlarmInput(
   @Field val missions: List<MissionInput> = emptyList(),
   /** -1 = unlimited. */
   @Field val maxSnoozes: Int = Alarm.UNLIMITED_SNOOZES,
+  @Field val ringtoneUri: String? = null,
+  @Field val ringtoneName: String? = null,
+  @Field val backgroundUri: String? = null,
+  @Field val backgroundName: String? = null,
 ) : Record
 
 class AlarmLockedException :
@@ -62,10 +67,13 @@ class KtAlarmModule : Module() {
 
   companion object {
     private const val REQUEST_SCAN = 0x4B7A
+    private const val REQUEST_MEDIA = 0x4B7B
   }
 
   /** The JS promise waiting for [ScanActivity]'s result. */
   private var pendingScan: Promise? = null
+  private var pendingMedia: Promise? = null
+  private var mediaKind = "image"
 
   private val context: Context
     get() = appContext.reactContext?.applicationContext ?: throw Exceptions.ReactContextLost()
@@ -86,7 +94,33 @@ class KtAlarmModule : Module() {
 
     Events("onAlarmsChanged", "onRingingChanged")
 
+    View(AlarmTimePickerView::class) {
+      Events("onTimeChanged")
+      Prop("initialHour") { view: AlarmTimePickerView, value: Int -> view.setInitialHour(value) }
+      Prop("initialMinute") { view: AlarmTimePickerView, value: Int -> view.setInitialMinute(value) }
+      Prop("dark") { view: AlarmTimePickerView, value: Boolean -> view.setDark(value) }
+    }
+
     OnActivityResult { _, payload ->
+      if (payload.requestCode == REQUEST_MEDIA) {
+        val promise = pendingMedia ?: return@OnActivityResult
+        pendingMedia = null
+        val uri = payload.data?.data
+        if (payload.resultCode != Activity.RESULT_OK || uri == null) {
+          promise.resolve(null)
+        } else {
+          val ctx = context
+          val kind = mediaKind
+          AlarmMediaStore.io.execute {
+            try {
+              promise.resolve(AlarmMediaStore.importMedia(ctx, uri, kind))
+            } catch (e: Exception) {
+              promise.reject("ERR_MEDIA_IMPORT", e.message ?: "Could not import this file.", e)
+            }
+          }
+        }
+        return@OnActivityResult
+      }
       if (payload.requestCode != REQUEST_SCAN) return@OnActivityResult
       val promise = pendingScan ?: return@OnActivityResult
       pendingScan = null
@@ -105,7 +139,11 @@ class KtAlarmModule : Module() {
     }
 
     OnCreate { AlarmEvents.add(bridgeListener) }
-    OnDestroy { AlarmEvents.remove(bridgeListener) }
+    OnDestroy {
+      AlarmEvents.remove(bridgeListener)
+      pendingMedia?.resolve(null)
+      pendingMedia = null
+    }
 
     // region Alarms
 
@@ -119,8 +157,7 @@ class KtAlarmModule : Module() {
       require(input.hour in 0..23 && input.minute in 0..59) { "Invalid time" }
       val existing = input.id?.let { AlarmStore.get(context, it) }
       if (existing?.isLocked() == true) throw AlarmLockedException()
-      // One mission per alarm in v1; the list shape leaves room for chains.
-      val missions = input.missions.take(1).map { it.toMission() ?: throw InvalidMissionException() }
+      val missions = input.missions.map { it.toMission() ?: throw InvalidMissionException() }
       if (missions.isNotEmpty() && !AlarmPermissions.hasOverlay(context)) throw OverlayPermissionRequiredException()
       val alarm = Alarm(
         id = input.id ?: UUID.randomUUID().toString(),
@@ -135,6 +172,10 @@ class KtAlarmModule : Module() {
         missions = missions,
         maxSnoozes = if (input.maxSnoozes < 0) Alarm.UNLIMITED_SNOOZES else input.maxSnoozes.coerceIn(0, 10),
         snoozeCount = 0,
+        ringtoneUri = AlarmMediaStore.checkedUri(context, input.ringtoneUri),
+        ringtoneName = input.ringtoneName?.take(120),
+        backgroundUri = AlarmMediaStore.checkedUri(context, input.backgroundUri),
+        backgroundName = input.backgroundName?.take(120),
       )
       AlarmController.save(context, alarm)
       alarm.toMap()
@@ -170,6 +211,29 @@ class KtAlarmModule : Module() {
       Handler(Looper.getMainLooper()).post {
         @Suppress("DEPRECATION")
         activity.startActivityForResult(ScanActivity.intent(activity), REQUEST_SCAN)
+      }
+    }
+
+    AsyncFunction("pickAlarmMedia") { kind: String, promise: Promise ->
+      require(kind == "audio" || kind == "image") { "Unsupported media type." }
+      val activity = appContext.currentActivity ?: throw NoActivityException()
+      check(pendingMedia == null) { "A file picker is already open." }
+      pendingMedia = promise
+      mediaKind = kind
+      Handler(Looper.getMainLooper()).post {
+        try {
+          // The system grants read access to this file. No broad storage/media permission needed.
+          val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = if (kind == "image") "image/*" else "audio/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          }
+          @Suppress("DEPRECATION")
+          activity.startActivityForResult(intent, REQUEST_MEDIA)
+        } catch (e: Exception) {
+          pendingMedia = null
+          promise.reject("ERR_MEDIA_PICKER", "Could not open the system file picker.", e)
+        }
       }
     }
 

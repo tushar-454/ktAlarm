@@ -214,7 +214,7 @@ class AlarmService : Service() {
     }
 
     acquireWakeLock(silenceAfter + 60_000)
-    startSound()
+    startSound(alarm.ringtoneUri)
     if (alarm.vibrate) startVibration()
     launchRingingScreen(alarm)
 
@@ -293,7 +293,10 @@ class AlarmService : Service() {
     val b = builder(CHANNEL_RINGING)
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
       .setContentTitle(title)
-      .setContentText(alarm?.mission?.let { "$time · ${it.describe()} to turn off" } ?: time)
+      .setContentText(alarm?.mission?.let {
+        if (alarm.missions.size > 1) "$time · Complete ${alarm.missions.size} missions to turn off"
+        else "$time · ${it.describe()} to turn off"
+      } ?: time)
       .setCategory(Notification.CATEGORY_ALARM)
       .setVisibility(Notification.VISIBILITY_PUBLIC)
       .setOngoing(true)
@@ -425,13 +428,13 @@ class AlarmService : Service() {
     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
   ).distinct()
 
-  private fun startSound() {
+  private fun startSound(customUri: String?) {
     val attrs = AudioAttributes.Builder()
       .setUsage(AudioAttributes.USAGE_ALARM)
       .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
       .build()
 
-    for (uri in alarmUris()) {
+    for (uri in (listOfNotNull(customUri?.let { Uri.parse(it) }) + alarmUris()).distinct()) {
       val p = MediaPlayer()
       try {
         p.setAudioAttributes(attrs)

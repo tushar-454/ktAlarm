@@ -108,6 +108,7 @@ function AlarmRow({ alarm, now }: { alarm: Alarm; now: number }) {
         {mission && (
           <Text className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400" numberOfLines={1}>
             {alarm.locked ? '🔒' : missionInfo(mission.type).emoji} {describeMission(mission)}
+            {(alarm.missions?.length ?? 0) > 1 ? ` + ${alarm.missions!.length - 1} more` : ''}
           </Text>
         )}
         {snoozed ? (
