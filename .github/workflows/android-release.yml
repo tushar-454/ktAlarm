@@ -18,66 +18,97 @@ jobs:
         env:
             EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
             GH_TOKEN: ${{ github.token }}
+            CI: "1"
 
         steps:
-            # 1. Checkout the complete Git history
+            # 1. Checkout repository
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
                   fetch-depth: 0
 
-            # 2. Install Node.js
+            # 2. Setup Node.js
             - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
                   node-version: "24"
                   cache: npm
 
-            # 3. Install Expo EAS CLI and authenticate
-            - name: Setup EAS CLI
-              uses: expo/expo-github-action@v8
-              with:
-                  eas-version: latest
-                  packager: npm
-                  token: ${{ secrets.EXPO_TOKEN }}
-
-            # 4. Install project dependencies
+            # 3. Install dependencies
             - name: Install dependencies
               run: npm ci
 
-            # 5. Check project
+            # 4. Install EAS CLI directly
+            # Avoids Expo GitHub Action cache issues
+            - name: Install EAS CLI
+              timeout-minutes: 15
+              run: |
+                  npm install --global eas-cli@27.10.0 \
+                    --no-audit \
+                    --no-fund
+
+                  eas --version
+
+            # 5. Verify Expo token
+            - name: Verify Expo authentication
+              run: |
+                  if [ -z "$EXPO_TOKEN" ]; then
+                    echo "EXPO_TOKEN GitHub secret is missing"
+                    exit 1
+                  fi
+
+                  eas whoami
+                  eas project:info
+
+            # 6. Fix TypeScript CSS import declarations
+            - name: Prepare CSS type declarations
+              shell: bash
+              run: |
+                  if [ ! -f src/global.css ]; then
+                    echo "ERROR: src/global.css is missing"
+                    exit 1
+                  fi
+
+                  if [ ! -f src/css.d.ts ]; then
+                    printf 'declare module "*.css";\n' > src/css.d.ts
+                  fi
+
+                  echo "CSS type declarations ready"
+
+            # 7. Validate TypeScript and ESLint
             - name: TypeScript and ESLint
               run: |
                   npx tsc --noEmit
                   npm run lint
 
-            # 6. Validate existing EAS configuration
+            # 8. Validate EAS configuration
             - name: Verify EAS configuration
               run: |
                   node <<'NODE'
                   const eas = require("./eas.json");
 
                   if (eas.cli?.appVersionSource !== "remote") {
-                    throw new Error("EAS remote versioning is required");
+                    throw new Error("Remote versioning is required");
                   }
 
                   if (eas.build?.preview?.android?.buildType !== "apk") {
-                    throw new Error("Preview must build an APK");
+                    throw new Error("Preview must build APK");
                   }
 
-                  const increment = eas.build.preview.android.autoIncrement;
+                  const increment =
+                    eas.build.preview.android.autoIncrement;
 
-                  if (increment !== true && increment !== "versionCode") {
-                    throw new Error("Android autoIncrement is not enabled");
+                  if (
+                    increment !== true &&
+                    increment !== "versionCode"
+                  ) {
+                    throw new Error("Android autoIncrement is disabled");
                   }
 
-                  console.log("EAS configuration verified");
+                  console.log("EAS configuration valid");
                   NODE
 
-                  eas whoami
-                  eas project:info
-
-            # 7. Generate a unique GitHub release version
+            # 9. Generate release version
             - name: Generate release version
               id: version
               shell: bash
@@ -85,7 +116,7 @@ jobs:
                   BASE=$(node -p "require('./package.json').version")
 
                   if [[ ! "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    echo "Expected package.json version X.Y.Z"
+                    echo "Invalid package.json version: $BASE"
                     exit 1
                   fi
 
@@ -95,21 +126,28 @@ jobs:
                   PATCH="${REST##*.}"
 
                   NEXT_PATCH=$((10#$PATCH + GITHUB_RUN_NUMBER))
+
                   VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
                   TAG="v${VERSION}"
 
                   if gh release view "$TAG" >/dev/null 2>&1; then
-                    echo "Release $TAG already exists"
+                    echo "Release already exists: $TAG"
+                    exit 1
+                  fi
+
+                  if git rev-parse --verify \
+                    "refs/tags/$TAG" >/dev/null 2>&1; then
+                    echo "Git tag already exists: $TAG"
                     exit 1
                   fi
 
                   echo "version=$VERSION" >> "$GITHUB_OUTPUT"
                   echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-                  echo "Release version: $VERSION"
+                  echo "New release: $TAG"
 
-            # 8. Update user-visible Android versionName
-            # EAS independently increments the remote versionCode
+            # 10. Update Android versionName
+            # EAS remote versionCode increments separately
             - name: Update Android versionName
               env:
                   RELEASE_VERSION: ${{ steps.version.outputs.version }}
@@ -127,13 +165,15 @@ jobs:
 
                   gradle, count = re.subn(
                       r'(?m)^(\s*versionName\s+)"[^"]+"',
-                      lambda match: match.group(1) + f'"{version}"',
+                      lambda m: m.group(1) + f'"{version}"',
                       gradle,
                       count=1,
                   )
 
                   if count != 1:
-                      raise RuntimeError("Could not update Android versionName")
+                      raise RuntimeError(
+                          "Android versionName not found"
+                      )
 
                   gradle_path.write_text(gradle)
 
@@ -142,14 +182,17 @@ jobs:
                   app["expo"]["version"] = version
 
                   app_path.write_text(
-                      json.dumps(app, indent=2, ensure_ascii=False) + "\n"
+                      json.dumps(
+                          app,
+                          indent=2,
+                          ensure_ascii=False,
+                      ) + "\n"
                   )
 
-                  print(f"Android versionName set to {version}")
+                  print(f"Android versionName: {version}")
                   PY
 
-            # 9. Build APK with the existing EAS Preview profile
-            # Existing EAS-managed signing credentials are reused
+            # 11. Build signed APK using EAS Preview
             - name: Build signed Android APK
               id: build
               shell: bash
@@ -175,23 +218,28 @@ jobs:
                   eas build:view "$BUILD_ID" \
                     --json > eas-result.json
 
-                  STATUS=$(jq -r '.status // "" | ascii_upcase' eas-result.json)
-                  APK_URL=$(jq -r '.artifacts.buildUrl // empty' eas-result.json)
+                  STATUS=$(jq -r \
+                    '.status // "" | ascii_upcase' \
+                    eas-result.json)
+
+                  APK_URL=$(jq -r \
+                    '.artifacts.buildUrl // empty' \
+                    eas-result.json)
 
                   if [[ "$STATUS" != "FINISHED" ]]; then
-                    echo "EAS build status: $STATUS"
+                    echo "EAS build failed: $STATUS"
                     exit 1
                   fi
 
                   if [[ -z "$APK_URL" ]]; then
-                    echo "EAS did not return an APK URL"
+                    echo "APK download URL is missing"
                     exit 1
                   fi
 
                   echo "id=$BUILD_ID" >> "$GITHUB_OUTPUT"
                   echo "url=$APK_URL" >> "$GITHUB_OUTPUT"
 
-            # 10. Download and validate the APK
+            # 12. Download APK
             - name: Download APK
               env:
                   APK_URL: ${{ steps.build.outputs.url }}
@@ -207,19 +255,24 @@ jobs:
                     "$APK_URL" \
                     --output dist/ktAlarm.apk
 
-                  test "$(stat -c%s dist/ktAlarm.apk)" -gt 1000000
+                  APK_SIZE=$(stat -c%s dist/ktAlarm.apk)
+
+                  if [ "$APK_SIZE" -lt 1000000 ]; then
+                    echo "Downloaded APK is unexpectedly small"
+                    exit 1
+                  fi
 
                   unzip -tqq dist/ktAlarm.apk
 
-                  echo "APK downloaded and ZIP integrity verified"
+                  echo "APK integrity check passed"
 
-            # 11. Generate APK SHA-256 checksum
+            # 13. Generate SHA256 checksum
             - name: Generate checksum
               run: |
                   cd dist
                   sha256sum ktAlarm.apk > SHA256SUMS.txt
 
-            # 12. Generate release notes from Git history
+            # 14. Generate release notes
             - name: Generate release notes
               env:
                   RELEASE_VERSION: ${{ steps.version.outputs.version }}
@@ -235,21 +288,24 @@ jobs:
                   {
                     echo "# ktAlarm v${RELEASE_VERSION}"
                     echo
-                    echo "Automated Android release built with EAS Preview."
+                    echo "Automated Android APK release."
                     echo
                     echo "## Build information"
                     echo
-                    echo "- Version: \`${RELEASE_VERSION}\`"
-                    echo "- Build profile: \`preview\`"
-                    echo "- Commit: \`${GITHUB_SHA}\`"
-                    echo "- EAS Build: \`${BUILD_ID}\`"
+                    echo "- Version: ${RELEASE_VERSION}"
+                    echo "- Profile: preview"
+                    echo "- Commit: ${GITHUB_SHA}"
+                    echo "- EAS Build ID: ${BUILD_ID}"
                     echo
                     echo "## What's Changed"
                     echo
 
                     if [[ -n "$PREVIOUS_TAG" ]] && \
                        git rev-parse --verify \
-                       "${PREVIOUS_TAG}^{commit}" >/dev/null 2>&1; then
+                       "${PREVIOUS_TAG}^{commit}" \
+                       >/dev/null 2>&1 && \
+                       git merge-base --is-ancestor \
+                       "$PREVIOUS_TAG" "$GITHUB_SHA"; then
 
                       git log \
                         "${PREVIOUS_TAG}..${GITHUB_SHA}" \
@@ -263,14 +319,13 @@ jobs:
                     fi
 
                     echo
-                    echo "## Download"
+                    echo "## Downloads"
                     echo
-                    echo "Download **ktAlarm.apk** from Assets below."
-                    echo
-                    echo "SHA256SUMS.txt contains the APK checksum."
+                    echo "- ktAlarm.apk"
+                    echo "- SHA256SUMS.txt"
                   } > release-notes.md
 
-            # 13. Publish GitHub Release
+            # 15. Publish GitHub Release
             - name: Publish GitHub Release
               env:
                   RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -284,4 +339,4 @@ jobs:
                     --title "ktAlarm v${RELEASE_VERSION}" \
                     --notes-file release-notes.md
 
-                  echo "Published GitHub Release: $RELEASE_TAG"
+                  echo "Release published: $RELEASE_TAG"
