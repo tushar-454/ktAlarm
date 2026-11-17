@@ -1,0 +1,30 @@
+# 06 — Risk Matrix
+
+Categories: **A** low risk (strong evidence, straightforward behavior-preserving) · **B** moderate (needs build verification, runtime/device tests) · **C** high (touches alarm scheduling, exact alarms, mission authorization, dismissal, background services, bridge contracts, persistence, process recovery, permissions, lock-screen) — **deferred**.
+Severity/priority: H/M/L. IDs refer to docs 03 (S*), 04 (P*), 05 (Z*).
+
+| ID | Item | Cat. | Sev./Prio | Exact location | Evidence | Benefit | Regression risk | Required verification |
+|---|---|---|---|---|---|---|---|---|
+| Z2 | Distribute AAB (not universal APK) to stores/testers | A | M / high | `eas.json` (`production` already AAB) | Expo docs; ABI math doc 05 | Per-device download ≈ one ABI | none (process) | Install AAB via bundletool on arm64 device; smoke test |
+| Z1 | Limit `reactNativeArchitectures` for APK (preview) builds | B | H / high | `android/gradle.properties:reactNativeArchitectures` (or `eas.json` env / `-P` flag) | 42.2 MB native per ABI | Largest APK win (≈ −40–45 % per dropped x86 pair) | Device-support loss (x86 emulators; armv7 if dropped) | Build, `unzip -l` ABI list, install on arm64 + armv7 (if kept), full doc-08 matrix |
+| Z3 | Exclude `@expo/ui` from Android autolinking | B | M / med | `package.json` `expo.autolinking.android.exclude` | iOS-only import | dex ≲3 MB raw + 0.97 MB font (est.) | Expo Router or time picker could reference it on Android [U] | `tsc`, Metro bundle, Android release build, open all 3 screens, time picker, router modals |
+| Z4 | Drop reanimated/worklets (and test gesture-handler) | B | M / med | `package.json`, `babel` (preset-expo), native libs | no imports; optional peers | ≈ 3 MB × ABI | Build break (Babel worklets plugin, Reanimated used by a transitive lib [U]) | Clean install, bundle, full UI pass, release build |
+| Z5 | Disable Fresco GIF/WebP | B | L / low | `android/gradle.properties:expo.gif.enabled,expo.webp.enabled` | assets are PNG | ≈2 MB × ABI | Image format regressions in RN `<Image>` | Open every screen, preview backgrounds |
+| Z6 | `shrinkResources=true` | B | L / low | `android/gradle.properties` (`android.enableShrinkResourcesInReleaseBuilds`) | currently off | unknown | Over-stripping (reflection-referenced resources); R8 full mode interplay | Release build, mission screens, sleep sounds, icons/splash |
+| Z7 | Re-encode WAV presets | B | L / low | `modules/kt-alarm/android/src/main/res/raw/*` (+ `scripts/generate-audio-presets.py`) | 3.07 MB PCM | ≈2–2.7 MB (est.) | Loop gap/click; `MediaPlayer` format support | Listen test loops, `PresetMedia` ids unchanged, sleep timer end |
+| Z10 | Toggle legacy packaging for sideload APK | B | L / low | `gradle.properties:expo.useLegacyPackaging` | tradeoff | APK file ↓, install ↑ | slower cold start/install | Compare file/installed size, start time |
+| S2 | Separate release signing key | B | M / med | `android/app/build.gradle` `buildTypes.release`, `android/app/debug.keystore` | Release uses debug config | Removes forgeable-signature risk | **Existing installs cannot update** if key changes | Verify what EAS actually signs with; plan migration |
+| S3 | `allowBackup`/data-extraction policy | B | L / low | `android/app/src/main/AndroidManifest.xml:16` | flag true | Reduces data exposure | Lost restore convenience | `bmgr`/`adb backup` test of what is captured |
+| S9 | Strip `Log.i/d/v` in release | A | L / low | `proguard-rules.pro` | 5 sites | cosmetic | negligible | Release build, check logcat |
+| S1 | Validate `intent.action` in `BootReceiver` | **C** | L / low | `Receivers.kt:58-63` | exported, no check | Blocks spoofed re-arm/resume | Could break recovery if an action is missed | Reboot, time/zone change, app update, exact-alarm permission toggle on API 31–36 devices |
+| S4 | Treat `PendingRing` as locked | **C** | L / low | `Alarm.kt:49-50` | in-memory lock | closes 1–1.5 s self-bypass window | Could make alarms uneditable if `PendingRing` stale | Kill process while ringing, reopen, reboot during ring |
+| S5 | Non-destructive `AlarmStore.all()` parsing | **C** | M / med | `AlarmStore.kt:33-57` | catch-all → empty list → overwrite | Prevents total data loss on corrupt entry | Persistence format | Corrupt-entry unit tests, upgrade test |
+| S6 | Remove unused `INTERNET`, `READ/WRITE_EXTERNAL_STORAGE` | **C** (rule: permissions) | L / low | `android/app/src/main/AndroidManifest.xml:2-6` | No network/storage code in src [U for libs] | Smaller permission footprint | `expo-image`/Metro/Expo modules may expect `INTERNET`; dev builds need it | Merged-manifest diff, release smoke; dev client unaffected only if debug manifest retained |
+| P1 | Cache/parse-optimize `AlarmStore` | **C**, not recommended | — | `AlarmStore.kt` | tiny n | negligible | Persistence/kill-safety | — |
+| P-startup | Remove unused `androidx.startup` initializers (WorkManager) | **C** | L / measure first | merged manifest `InitializationProvider` | [U] impact | maybe startup ms | Might break ML Kit | Cold-start trace; camera missions |
+| Z8 | ML Kit unbundled variants | **C** | — | `modules/kt-alarm/android/build.gradle` | 24 MB/ABI | large | Offline guarantee broken, Play-services dependency | Product decision; full camera mission matrix |
+| Z9 | Remove other autolinked Expo modules | B/C | — | `package.json` | no direct use | small | Router/Expo internals | dependency-graph proof first |
+| — | Any change to scheduler, service, activity, store, manifest flags, keep-rules, `androidx.work` pin, bridge contract | **C** | — | see doc 02 §6 | — | — | alarm failure | explicitly out of plan |
+
+**Totals:** Category A = 2 (Z2, S9) · Category B = 9 (Z1, Z3, Z4, Z5, Z6, Z7, Z10, S2, S3) · Category C = 8 (S1, S4, S5, S6, P1, P-startup, Z8, and the "alarm-core" catch-all) — none scheduled for implementation · Z9 is B/C and left unclassified until a dependency-graph proof exists.
+Counts are of *proposed* items, not of defects: no critical/high-severity defect was found.
