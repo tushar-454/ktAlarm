@@ -1,0 +1,287 @@
+name: ktAlarm Android Release
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        name: Build and Publish APK
+        runs-on: ubuntu-latest
+        timeout-minutes: 360
+
+        env:
+            EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+            GH_TOKEN: ${{ github.token }}
+
+        steps:
+            # 1. Checkout the complete Git history
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            # 2. Install Node.js
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: npm
+
+            # 3. Install Expo EAS CLI and authenticate
+            - name: Setup EAS CLI
+              uses: expo/expo-github-action@v8
+              with:
+                  eas-version: latest
+                  packager: npm
+                  token: ${{ secrets.EXPO_TOKEN }}
+
+            # 4. Install project dependencies
+            - name: Install dependencies
+              run: npm ci
+
+            # 5. Check project
+            - name: TypeScript and ESLint
+              run: |
+                  npx tsc --noEmit
+                  npm run lint
+
+            # 6. Validate existing EAS configuration
+            - name: Verify EAS configuration
+              run: |
+                  node <<'NODE'
+                  const eas = require("./eas.json");
+
+                  if (eas.cli?.appVersionSource !== "remote") {
+                    throw new Error("EAS remote versioning is required");
+                  }
+
+                  if (eas.build?.preview?.android?.buildType !== "apk") {
+                    throw new Error("Preview must build an APK");
+                  }
+
+                  const increment = eas.build.preview.android.autoIncrement;
+
+                  if (increment !== true && increment !== "versionCode") {
+                    throw new Error("Android autoIncrement is not enabled");
+                  }
+
+                  console.log("EAS configuration verified");
+                  NODE
+
+                  eas whoami
+                  eas project:info
+
+            # 7. Generate a unique GitHub release version
+            - name: Generate release version
+              id: version
+              shell: bash
+              run: |
+                  BASE=$(node -p "require('./package.json').version")
+
+                  if [[ ! "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    echo "Expected package.json version X.Y.Z"
+                    exit 1
+                  fi
+
+                  MAJOR="${BASE%%.*}"
+                  REST="${BASE#*.}"
+                  MINOR="${REST%%.*}"
+                  PATCH="${REST##*.}"
+
+                  NEXT_PATCH=$((10#$PATCH + GITHUB_RUN_NUMBER))
+                  VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+                  TAG="v${VERSION}"
+
+                  if gh release view "$TAG" >/dev/null 2>&1; then
+                    echo "Release $TAG already exists"
+                    exit 1
+                  fi
+
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+                  echo "Release version: $VERSION"
+
+            # 8. Update user-visible Android versionName
+            # EAS independently increments the remote versionCode
+            - name: Update Android versionName
+              env:
+                  RELEASE_VERSION: ${{ steps.version.outputs.version }}
+              run: |
+                  python3 <<'PY'
+                  import json
+                  import os
+                  import re
+                  from pathlib import Path
+
+                  version = os.environ["RELEASE_VERSION"]
+
+                  gradle_path = Path("android/app/build.gradle")
+                  gradle = gradle_path.read_text()
+
+                  gradle, count = re.subn(
+                      r'(?m)^(\s*versionName\s+)"[^"]+"',
+                      lambda match: match.group(1) + f'"{version}"',
+                      gradle,
+                      count=1,
+                  )
+
+                  if count != 1:
+                      raise RuntimeError("Could not update Android versionName")
+
+                  gradle_path.write_text(gradle)
+
+                  app_path = Path("app.json")
+                  app = json.loads(app_path.read_text())
+                  app["expo"]["version"] = version
+
+                  app_path.write_text(
+                      json.dumps(app, indent=2, ensure_ascii=False) + "\n"
+                  )
+
+                  print(f"Android versionName set to {version}")
+                  PY
+
+            # 9. Build APK with the existing EAS Preview profile
+            # Existing EAS-managed signing credentials are reused
+            - name: Build signed Android APK
+              id: build
+              shell: bash
+              run: |
+                  eas build \
+                    --platform android \
+                    --profile preview \
+                    --non-interactive \
+                    --freeze-credentials \
+                    --wait \
+                    --json > eas-build.json
+
+                  BUILD_ID=$(jq -er '
+                    if type == "array" then
+                      .[0].id
+                    else
+                      .id
+                    end
+                  ' eas-build.json)
+
+                  echo "EAS Build ID: $BUILD_ID"
+
+                  eas build:view "$BUILD_ID" \
+                    --json > eas-result.json
+
+                  STATUS=$(jq -r '.status // "" | ascii_upcase' eas-result.json)
+                  APK_URL=$(jq -r '.artifacts.buildUrl // empty' eas-result.json)
+
+                  if [[ "$STATUS" != "FINISHED" ]]; then
+                    echo "EAS build status: $STATUS"
+                    exit 1
+                  fi
+
+                  if [[ -z "$APK_URL" ]]; then
+                    echo "EAS did not return an APK URL"
+                    exit 1
+                  fi
+
+                  echo "id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+                  echo "url=$APK_URL" >> "$GITHUB_OUTPUT"
+
+            # 10. Download and validate the APK
+            - name: Download APK
+              env:
+                  APK_URL: ${{ steps.build.outputs.url }}
+              shell: bash
+              run: |
+                  mkdir -p dist
+
+                  curl \
+                    --fail \
+                    --location \
+                    --retry 3 \
+                    --retry-all-errors \
+                    "$APK_URL" \
+                    --output dist/ktAlarm.apk
+
+                  test "$(stat -c%s dist/ktAlarm.apk)" -gt 1000000
+
+                  unzip -tqq dist/ktAlarm.apk
+
+                  echo "APK downloaded and ZIP integrity verified"
+
+            # 11. Generate APK SHA-256 checksum
+            - name: Generate checksum
+              run: |
+                  cd dist
+                  sha256sum ktAlarm.apk > SHA256SUMS.txt
+
+            # 12. Generate release notes from Git history
+            - name: Generate release notes
+              env:
+                  RELEASE_VERSION: ${{ steps.version.outputs.version }}
+                  BUILD_ID: ${{ steps.build.outputs.id }}
+              shell: bash
+              run: |
+                  PREVIOUS_TAG=$(
+                    gh release view \
+                      --json tagName \
+                      --jq '.tagName' 2>/dev/null || true
+                  )
+
+                  {
+                    echo "# ktAlarm v${RELEASE_VERSION}"
+                    echo
+                    echo "Automated Android release built with EAS Preview."
+                    echo
+                    echo "## Build information"
+                    echo
+                    echo "- Version: \`${RELEASE_VERSION}\`"
+                    echo "- Build profile: \`preview\`"
+                    echo "- Commit: \`${GITHUB_SHA}\`"
+                    echo "- EAS Build: \`${BUILD_ID}\`"
+                    echo
+                    echo "## What's Changed"
+                    echo
+
+                    if [[ -n "$PREVIOUS_TAG" ]] && \
+                       git rev-parse --verify \
+                       "${PREVIOUS_TAG}^{commit}" >/dev/null 2>&1; then
+
+                      git log \
+                        "${PREVIOUS_TAG}..${GITHUB_SHA}" \
+                        --format='- %s (%h)' \
+                        --max-count=100
+                    else
+                      git log \
+                        "$GITHUB_SHA" \
+                        --format='- %s (%h)' \
+                        --max-count=25
+                    fi
+
+                    echo
+                    echo "## Download"
+                    echo
+                    echo "Download **ktAlarm.apk** from Assets below."
+                    echo
+                    echo "SHA256SUMS.txt contains the APK checksum."
+                  } > release-notes.md
+
+            # 13. Publish GitHub Release
+            - name: Publish GitHub Release
+              env:
+                  RELEASE_TAG: ${{ steps.version.outputs.tag }}
+                  RELEASE_VERSION: ${{ steps.version.outputs.version }}
+              shell: bash
+              run: |
+                  gh release create "$RELEASE_TAG" \
+                    dist/ktAlarm.apk \
+                    dist/SHA256SUMS.txt \
+                    --target "$GITHUB_SHA" \
+                    --title "ktAlarm v${RELEASE_VERSION}" \
+                    --notes-file release-notes.md
+
+                  echo "Published GitHub Release: $RELEASE_TAG"
